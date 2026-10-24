@@ -1,0 +1,12 @@
+packages:
+  - apps/*
+
+peerDependencyRules:
+  allowedVersions:
+    eslint-plugin-jsx-a11y>eslint: "10"
+    eslint-plugin-react>eslint: "10"
+
+update:
+  ignoreDeps:
+    - typescript
+    - lucide-react

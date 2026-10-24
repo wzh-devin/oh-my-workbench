@@ -1,0 +1,34 @@
+{
+  "name": "flowly",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": "^22.22.3 || ^24.16.0 || >=26.3.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "build": "pnpm --filter @workbench/web build && pnpm --filter @workbench/api build",
+    "start": "pnpm --filter @workbench/api start",
+    "lint": "eslint .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:watch": "pnpm --parallel -r test:watch",
+    "format": "prettier --write \"apps/**/*.{ts,tsx,css}\"",
+    "format:check": "prettier --check \"apps/**/*.{ts,tsx,css}\""
+  },
+  "devDependencies": {
+    "@eslint/compat": "^2.1.1",
+    "eslint": "^10.11.0",
+    "prettier": "^3.9.9",
+    "prettier-plugin-tailwindcss": "^0.8.1",
+    "typescript": "^6.0.3",
+    "@eslint/js": "^10.0.1",
+    "typescript-eslint": "^8.72.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.0.0",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react": "^7.37.5"
+  }
+}

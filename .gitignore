@@ -1,0 +1,121 @@
+# dependencies
+node_modules/
+/.pnp
+.pnp.*
+
+# build output
+.next/
+out/
+build/
+dist/
+*.local
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+node_modules/.tmp
+
+# env - real values stay local, .env.example IS committed.
+# .env.local holds REUI_LICENSE_KEY and must never be committed.
+.env*
+!.env.example
+
+# logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# testing and tools
+coverage/
+.turbo/
+.code-review-graph/
+
+# deploy adapters. The CLI-written project link identifies a specific account;
+# vercel.json itself IS tracked.
+.vercel/
+.netlify/
+
+# --------------------------------------------------------------------------
+# What is deliberately NOT ignored, and why
+#
+# AGENTS.md, .agents/, .claude/, .mcp.json, skills-lock.json and docs/ are all
+# INTERNAL - no buyer should ever see them - and they are all TRACKED anyway.
+#
+# This template is the base every other ReUI template is cloned from, and the
+# agent tooling is most of what makes cloning it worth anything. Gitignored, a
+# clone would arrive with no MCP wiring, no skills and no docs scaffolding, and
+# the next developer would set it all up by hand again.
+#
+# Keeping them out of the buyer ZIP is the packer's job, not git's:
+# scripts/pack-template.sh in the reui-templates repo strips every one of these
+# by name, whether or not git tracked them. That deny-list exists precisely
+# because a .gitignore cannot be trusted for this - templates 1, 3 and 5 track
+# their agent tooling too, and a clean `git archive` of any of them still
+# contains it.
+#
+# Two exceptions, below: .claude/settings.local.json is per-developer state,
+# and impeccable's engine binary is per-platform.
+# --------------------------------------------------------------------------
+.claude/settings.local.json
+
+# impeccable's engine: a 12.7MB native binary built for one OS and CPU, so a
+# committed copy is dead weight on every other machine and a new blob on every
+# update. The launcher next to it (scripts/impeccable) fetches the binary for
+# the current platform on first use, checks it against the release's .sha256,
+# and caches it in ~/.impeccable/bin/<version>/.
+.claude/skills/impeccable/scripts/bin/
+
+# Other editors' agent config. Not authored here; whoever adds it keeps it local.
+.cursor/
+.cursorrules
+.windsurf/
+.windsurfrules
+.aider*
+.continue/
+.codeium/
+.gemini/
+.roo/
+.roomodes
+.clinerules
+.specstory/
+.serena/
+.opencode/
+.opencode.json
+.kilocode/
+.augment/
+.github/copilot-instructions.md
+
+# editors and OS. `._*` is the macOS AppleDouble sidecar, written whenever this
+# tree is copied to a non-HFS volume: a USB stick, a network share, a zip.
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.pem
+
+# scaffold leftovers
+.cta.json
+__unconfig*
+todos.json
+
+# A literal `@` directory, not the path alias. `shadcn add` sometimes writes a
+# registry dependency to the raw alias string instead of resolving it,
+# producing ./@/components/ui/*.tsx - byte-identical duplicates that nothing
+# imports, because every tool maps `@` before the filesystem is consulted.
+# Harmless until committed and someone edits the wrong copy.
+/@/
+
+# Local project context and verification reports
+/.agents/skills/devin-project-context/
+/.devin-project-harness/

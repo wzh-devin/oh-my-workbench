@@ -1,0 +1,12 @@
+node_modules/
+out/
+build/
+dist/
+coverage/
+.turbo/
+.pnpm-store/
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+.agents/
