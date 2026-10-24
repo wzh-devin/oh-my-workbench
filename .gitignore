@@ -29,6 +29,12 @@ yarn-error.log*
 pnpm-debug.log*
 
 # testing and tools
+*.test.*
+*.spec.*
+test/
+tests/
+__tests__/
+__mocks__/
 coverage/
 .turbo/
 .code-review-graph/
