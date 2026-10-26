@@ -2,7 +2,9 @@
 
 A workflow automation workspace built with Vite, React 19, TypeScript, Tailwind CSS 4 and ReUI, with a Hono Node.js API. The repository uses pnpm workspaces.
 
-The UI includes a Dashboard, workflow and agent lists, two React Flow editors, ten settings sections and a demo sign-in screen. Existing business data remains in browser memory: refreshing restores the seed data, sign-in is simulated, and workflow runs and AI replies are demos.
+The personal workbench includes a Dashboard, Todo lists, QQ/Gmail inboxes, S3-compatible file assets and a React Flow resource overview. This iteration uses frontend sample data: metadata persists in localStorage and uploaded file bytes in IndexedDB. Mail and storage connections do not contact real services or collect credentials. Clearing browser storage removes these records and files.
+
+The existing workflow/agent editors, settings and simulated sign-in remain available. Their original demo state stays in browser memory.
 
 ## Requirements
 
@@ -39,6 +41,9 @@ apps/
           globals.css     Design tokens and local Inter font
       pages/
         dashboard/index.tsx
+        todos/index.tsx
+        mail/index.tsx
+        assets/index.tsx
         workflows/index.tsx
         workflow-editor/index.tsx
         agents/index.tsx
@@ -116,7 +121,11 @@ Direct GET requests to `/settings/general`, `/workflow-editor` and other page pa
 
 ## Routes and API
 
-Existing page URLs are preserved: `/dashboard`, `/workflows`, `/workflow-editor`, `/agents`, `/agent-builder`, `/settings/:section` and `/login`. `/settings` redirects to `/settings/general`; unsupported settings sections display the 404 page. Query parameters such as `?open=<id>`, `?new=1` and editor record parameters continue to work. Route titles use React 19's document metadata support.
+The primary pages are `/dashboard`, `/todos`, `/mail`, `/assets` and `/workflows` (the resource overview). Todo accepts `?list=<id>`, `?task=<id>` and `?view=myday|today|overdue|upcoming|important|completed`; Mail accepts `?account=<id>`, `?message=<id>` and `?view=accounts`; Assets accepts `?connection=<id>` and `?view=connections`.
+
+Todo includes Inbox, smart views, quick capture, due dates, daily planning, priorities, tags, editable steps, task details and a completed-task view. Lists can be renamed or removed; removing a list moves its tasks to Inbox. Mail can create a linked task and return to the original message. Existing v1 records receive default task metadata without being reset. Recurring tasks, background reminders and external synchronization are not implemented.
+
+Existing editor and settings URLs are preserved: `/workflow-editor`, `/agents`, `/agent-builder`, `/settings/:section` and `/login`. `/settings` redirects to `/settings/general`; unsupported settings sections display the 404 page. Editor record parameters continue to work. Route titles use React 19's document metadata support.
 
 ```sh
 curl http://127.0.0.1:3000/api/health

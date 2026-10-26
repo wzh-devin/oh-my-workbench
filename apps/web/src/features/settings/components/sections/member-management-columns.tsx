@@ -6,7 +6,6 @@ import { type DataGridFeatures } from "@/components/reui/data-grid/data-grid"
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header"
 import { type ColumnDef, type Row } from "@tanstack/react-table"
 
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -75,27 +74,14 @@ function MemberCell({ row }: { row: Row<DataGridFeatures, MemberRecord> }) {
   const actions = useRowActions()
 
   return (
-    <div className="flex min-w-0 items-center gap-3">
-      <Avatar className="size-8 shrink-0">
-        <AvatarImage src={member.src} alt={member.name} />
-        <AvatarFallback>{member.initials}</AvatarFallback>
-      </Avatar>
-
-      <div className="min-w-0 space-y-1">
-        <div className="flex flex-wrap items-center gap-2">
-          {/* The name opens the member, so a row reads as a link to them. */}
-          <button
-            type="button"
-            onClick={() => actions.view(member.id)}
-            className="truncate rounded-sm text-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            {member.name}
-          </button>
-          <AccessBadge access={member.access} />
-        </div>
-        <p className="truncate text-sm text-muted-foreground">{member.email}</p>
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={() => actions.view(member.id)}
+      className="block max-w-full truncate text-sm font-normal underline-offset-4 outline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+      title={member.name}
+    >
+      {member.name}
+    </button>
   )
 }
 
@@ -113,7 +99,7 @@ function MemberActionsCell({
         render={
           <Button
             type="button"
-            size="icon"
+            size="icon-sm"
             variant="ghost"
             className="text-muted-foreground"
             aria-label={`Open ${member.name} actions`}
@@ -170,74 +156,132 @@ export const memberManagementColumns: ColumnDef<
     accessorKey: "name",
     id: "name",
     header: ({ column }) => (
-      <DataGridColumnHeader column={column} visibility={true} />
+      <DataGridColumnHeader
+        column={column}
+        className="text-sm font-medium text-foreground"
+      />
     ),
     cell: ({ row }) => <MemberCell row={row} />,
-    size: 300,
+    size: 220,
     enableSorting: true,
     enableHiding: false,
-    enableResizing: true,
     meta: {
       headerTitle: "Member",
-      // Inset the leading column to the toolbar/pagination px-5 so the avatar
-      // does not hug the table edge (the dense grid cell default is px-2).
+      fillWidth: true,
       headerClassName: "ps-5",
       cellClassName: "ps-5",
     },
   },
   {
+    accessorKey: "email",
+    id: "email",
+    header: ({ column }) => (
+      <DataGridColumnHeader
+        column={column}
+        className="text-sm font-medium text-foreground"
+      />
+    ),
+    cell: ({ row }) => (
+      <span
+        className="block truncate text-sm text-muted-foreground"
+        title={row.original.email}
+      >
+        {row.original.email}
+      </span>
+    ),
+    size: 200,
+    enableSorting: true,
+    meta: { headerTitle: "Email" },
+  },
+  {
+    accessorKey: "access",
+    id: "access",
+    header: ({ column }) => (
+      <DataGridColumnHeader
+        column={column}
+        className="text-sm font-medium text-foreground"
+      />
+    ),
+    cell: ({ row }) => <AccessBadge access={row.original.access} />,
+    size: 120,
+    enableSorting: true,
+    meta: { headerTitle: "Access" },
+  },
+  {
     accessorKey: "role",
     id: "role",
     header: ({ column }) => (
-      <DataGridColumnHeader column={column} visibility={true} />
+      <DataGridColumnHeader
+        column={column}
+        className="text-sm font-medium text-foreground"
+      />
     ),
     cell: ({ row }) => (
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="line-clamp-1 text-sm font-medium">
-          {row.original.role}
-        </span>
-        <span className="line-clamp-1 text-sm text-muted-foreground">
-          {row.original.team}
-        </span>
-      </div>
+      <span className="block truncate text-sm" title={row.original.role}>
+        {row.original.role}
+      </span>
     ),
-    size: 190,
+    size: 140,
     enableSorting: true,
-    enableHiding: true,
-    enableResizing: true,
-    meta: {
-      headerTitle: "Role",
-    },
+    meta: { headerTitle: "Role" },
+  },
+  {
+    accessorKey: "team",
+    id: "team",
+    header: ({ column }) => (
+      <DataGridColumnHeader
+        column={column}
+        className="text-sm font-medium text-foreground"
+      />
+    ),
+    cell: ({ row }) => (
+      <span
+        className="block truncate text-sm text-muted-foreground"
+        title={row.original.team}
+      >
+        {row.original.team}
+      </span>
+    ),
+    size: 120,
+    enableSorting: true,
+    meta: { headerTitle: "Team" },
   },
   {
     accessorKey: "status",
     id: "status",
     header: ({ column }) => (
-      <DataGridColumnHeader column={column} visibility={true} />
+      <DataGridColumnHeader
+        column={column}
+        className="text-sm font-medium text-foreground"
+      />
     ),
-    cell: ({ row }) => (
-      <div className="flex min-w-0 flex-col gap-1">
-        <MemberStatusBadge status={row.original.status} />
-        <span className="line-clamp-1 text-sm text-muted-foreground">
-          {row.original.lastActive}
-        </span>
-      </div>
-    ),
-    size: 160,
+    cell: ({ row }) => <MemberStatusBadge status={row.original.status} />,
+    size: 120,
     enableSorting: true,
-    enableHiding: true,
-    enableResizing: true,
-    meta: {
-      headerTitle: "Activity",
-    },
+    meta: { headerTitle: "Status" },
+  },
+  {
+    accessorKey: "lastActive",
+    id: "lastActive",
+    header: "Last active",
+    cell: ({ row }) => (
+      <span
+        className="block truncate text-sm text-muted-foreground"
+        title={row.original.lastActive}
+      >
+        {row.original.lastActive}
+      </span>
+    ),
+    size: 120,
+    enableSorting: false,
   },
   {
     id: "actions",
-    header: "",
+    header: "Actions",
     cell: ({ row }) => <MemberActionsCell row={row} />,
-    size: 52,
+    size: 80,
     enableSorting: false,
     enableHiding: false,
-    enableResizing: false,
+    meta: { headerClassName: "text-center", cellClassName: "text-center" },
   },
 ]

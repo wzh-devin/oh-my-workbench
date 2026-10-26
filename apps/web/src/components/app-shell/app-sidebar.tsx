@@ -49,7 +49,10 @@ export function AppSidebar({ activeNav, innerContent }: AppSidebarProps) {
           </SidebarHeader>
 
           <SidebarContent className="flex-row md:flex-col">
-            <NavMain items={NAV_ITEMS} activeNav={activeNav} />
+            <NavMain
+              items={NAV_ITEMS.filter((item) => !item.hidden)}
+              activeNav={activeNav}
+            />
           </SidebarContent>
 
           {/* Notifications sit just above the user, as in app-shell-3. */}

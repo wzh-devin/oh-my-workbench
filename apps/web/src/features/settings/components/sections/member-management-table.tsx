@@ -257,6 +257,7 @@ export function MemberManagementTable() {
   const table = useTable({
     features: dataGridFeatures,
     columns: memberManagementColumns,
+    defaultColumn: { enableResizing: false },
     data: filteredData,
     pageCount: Math.ceil(filteredData.length / pagination.pageSize),
     getRowId: (row) => row.id,
@@ -399,7 +400,7 @@ export function MemberManagementTable() {
         }
         tableLayout={{
           columnsPinnable: false,
-          columnsResizable: false,
+          columnsResizable: true,
           columnsMovable: false,
           columnsVisibility: false,
           headerSticky: false,

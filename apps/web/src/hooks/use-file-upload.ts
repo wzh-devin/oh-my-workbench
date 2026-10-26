@@ -3,6 +3,7 @@
 import type React from "react"
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -84,6 +85,14 @@ export const useFileUpload = (
   })
 
   const inputRef = useRef<HTMLInputElement>(null)
+  const previewUrls = useRef(new Set<string>())
+  useEffect(
+    () => () => {
+      previewUrls.current.forEach((url) => URL.revokeObjectURL(url))
+      previewUrls.current.clear()
+    },
+    []
+  )
 
   const validateFile = useCallback(
     (file: File | FileMetadata): string | null => {
@@ -126,7 +135,10 @@ export const useFileUpload = (
   const createPreview = useCallback(
     (file: File | FileMetadata): string | undefined => {
       if (file instanceof File) {
-        return URL.createObjectURL(file)
+        if (!file.type.startsWith("image/")) return undefined
+        const url = URL.createObjectURL(file)
+        previewUrls.current.add(url)
+        return url
       }
       return file.url
     },
@@ -135,7 +147,7 @@ export const useFileUpload = (
 
   const generateUniqueId = useCallback((file: File | FileMetadata): string => {
     if (file instanceof File) {
-      return `${file.name}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+      return crypto.randomUUID()
     }
     return file.id
   }, [])
@@ -150,6 +162,7 @@ export const useFileUpload = (
           file.file.type.startsWith("image/")
         ) {
           URL.revokeObjectURL(file.preview)
+          previewUrls.current.delete(file.preview)
         }
       }
 
@@ -200,15 +213,19 @@ export const useFileUpload = (
       for (const file of newFilesArray) {
         // Only check for duplicates if multiple files are allowed
         if (multiple) {
-          const isDuplicate = state.files.some(
+          const isDuplicate = [...state.files, ...validFiles].some(
             (existingFile) =>
               existingFile.file.name === file.name &&
-              existingFile.file.size === file.size
+              existingFile.file.size === file.size &&
+              (!(existingFile.file instanceof File) ||
+                ((existingFile.file.webkitRelativePath || "") ===
+                  (file.webkitRelativePath || "") &&
+                  existingFile.file.lastModified === file.lastModified))
           )
 
           // Skip duplicate files silently
           if (isDuplicate) {
-            return
+            continue
           }
         }
 
@@ -274,6 +291,7 @@ export const useFileUpload = (
       clearFiles,
       onFilesChange,
       onFilesAdded,
+      onError,
     ]
   )
 
@@ -288,6 +306,7 @@ export const useFileUpload = (
           fileToRemove.file.type.startsWith("image/")
         ) {
           URL.revokeObjectURL(fileToRemove.preview)
+          previewUrls.current.delete(fileToRemove.preview)
         }
 
         const newFiles = prev.files.filter((file) => file.id !== id)
@@ -377,7 +396,7 @@ export const useFileUpload = (
         ...props,
         type: "file" as const,
         onChange: handleFileChange,
-        accept: props.accept || accept,
+        accept: props.accept || (accept === "*" ? undefined : accept),
         multiple: props.multiple !== undefined ? props.multiple : multiple,
         ref: inputRef,
       }

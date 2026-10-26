@@ -18,32 +18,39 @@ type InnerNavButtonProps = {
   isActive?: boolean
 } & Omit<ComponentProps<typeof Button>, "variant" | "size">
 
-function innerNavClassName(
+export function innerNavRowClassName(
   isActive: boolean,
   className?: Parameters<typeof cn>[number]
 ) {
   return cn(
-    "w-full justify-start gap-2.5 font-normal [&_svg:not([class*='size-'])]:size-4",
+    "w-full justify-start gap-2.5 text-[0.8rem] font-normal [&_svg:not([class*='size-'])]:size-4",
     isActive
-      ? "bg-accent font-medium text-accent-foreground"
+      ? "bg-accent text-accent-foreground"
       : "text-muted-foreground hover:text-foreground",
     className
   )
 }
 
-function InnerNavLabel({
+export function InnerNavLabel({
   item,
+  truncate = true,
 }: {
   item: Pick<InnerNavItem, "label" | "icon" | "badge">
+  truncate?: boolean
 }) {
   return (
     <>
       <span className="size-4 shrink-0 opacity-70 [&_svg]:size-4">
         {item.icon}
       </span>
-      <span className="truncate">{item.label}</span>
+      <span
+        className={truncate ? "truncate" : "whitespace-nowrap"}
+        title={item.label}
+      >
+        {item.label}
+      </span>
       {item.badge !== undefined && item.badge > 0 && (
-        <Badge variant="outline" size="sm" className="ml-auto">
+        <Badge variant="outline" size="sm" className="ml-auto font-normal">
           {item.badge}
         </Badge>
       )}
@@ -63,7 +70,7 @@ export function InnerNavButton({
       variant="ghost"
       size="sm"
       aria-current={isActive ? "true" : undefined}
-      className={innerNavClassName(isActive, className)}
+      className={innerNavRowClassName(isActive, className)}
       {...props}
     >
       <InnerNavLabel item={item} />
@@ -91,7 +98,7 @@ function InnerNavLink({
       aria-current={isActive ? "page" : undefined}
       className={cn(
         buttonVariants({ variant: "ghost", size: "sm" }),
-        innerNavClassName(isActive)
+        innerNavRowClassName(isActive)
       )}
     >
       <InnerNavLabel item={item} />
@@ -120,7 +127,7 @@ export function InnerNavGroup({
       <div role="group" aria-labelledby={titleId}>
         <p
           id={titleId}
-          className="px-3 pt-2 pb-1 text-[11px] font-medium text-muted-foreground uppercase"
+          className="px-3 pt-2 pb-1 text-xs font-medium text-muted-foreground"
         >
           {title}
         </p>

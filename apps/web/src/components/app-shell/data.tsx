@@ -9,6 +9,9 @@ import {
   SettingsIcon,
   SplinePointerIcon,
   WorkflowIcon,
+  ListTodoIcon,
+  MailIcon,
+  FilesIcon,
 } from "lucide-react"
 
 import { recordEditorHref } from "./record-link"
@@ -22,6 +25,7 @@ export type NavItem = {
   icon: ReactNode
   /** The page puts its own actions in the header, in place of Publish */
   pageActions?: boolean
+  hidden?: boolean
 }
 
 export type InnerNavItem = {
@@ -146,7 +150,29 @@ export const NAV_ITEMS: NavItem[] = [
     pageActions: true,
   },
   {
+    id: "todos",
+    label: "Todo",
+    href: "/todos",
+    icon: <ListTodoIcon aria-hidden="true" />,
+    pageActions: true,
+  },
+  {
+    id: "mail",
+    label: "邮箱",
+    href: "/mail",
+    icon: <MailIcon aria-hidden="true" />,
+    pageActions: true,
+  },
+  {
+    id: "assets",
+    label: "资产",
+    href: "/assets",
+    icon: <FilesIcon aria-hidden="true" />,
+    pageActions: true,
+  },
+  {
     id: "workflow-editor",
+    hidden: true,
     label: "Workflow Editor",
     href: "/workflow-editor",
     icon: <SplinePointerIcon aria-hidden="true" />,
@@ -154,6 +180,7 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     id: "agent-builder",
+    hidden: true,
     label: "AI Agent Builder",
     href: "/agent-builder",
     icon: <BotIcon aria-hidden="true" />,
@@ -161,13 +188,14 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     id: "workflows",
-    label: "Workflows",
+    label: "Workflow 总览",
     href: "/workflows",
     icon: <WorkflowIcon aria-hidden="true" />,
     pageActions: true,
   },
   {
     id: "agents",
+    hidden: true,
     label: "Agents",
     href: "/agents",
     icon: <BrainCircuitIcon aria-hidden="true" />,
@@ -185,6 +213,10 @@ export const NAV_ITEMS: NavItem[] = [
 // Placeholder navigation for each section until its sub-pages exist: the
 // items switch the inner sidebar's active state but do not route anywhere.
 export const INNER_NAV: Record<string, InnerNavData> = {
+  todos: { sections: [], pagePanel: "待办清单" },
+  mail: { sections: [], pagePanel: "邮箱分类" },
+  assets: { sections: [], pagePanel: "资产分类" },
+  workflows: { sections: [], pagePanel: "资源分类" },
   // The editor owns its panel: the page portals its step library into the
   // slot the shell renders here (see inner-panel.tsx), so the list can reach
   // the canvas it drops onto.

@@ -1,399 +1,328 @@
-"use client"
-
-import { Suspense, useCallback, useState } from "react"
-import { useNavigate } from "react-router"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { Link, useSearchParams } from "react-router"
+import { useReducedMotion } from "motion/react"
 import {
-  CircleCheckIcon,
-  DownloadIcon,
-  MoreHorizontalIcon,
+  Handle,
+  Panel,
+  Position,
+  ReactFlowProvider,
+  useNodesInitialized,
+  useNodesState,
+  useReactFlow,
+  type NodeProps,
+  type XYPosition,
+} from "@xyflow/react"
+import {
+  FilesIcon,
+  LayoutDashboardIcon,
+  ListTodoIcon,
+  MailIcon,
+  MaximizeIcon,
+  MinusIcon,
+  PauseIcon,
+  PlayIcon,
   PlusIcon,
-  SettingsIcon,
 } from "lucide-react"
-import { toast } from "sonner"
-
-import { HeaderActions } from "@/components/app-shell/header-actions"
-import { recordEditorHref } from "@/components/app-shell/record-link"
-import {
-  RecordRequestListener,
-  useClearRecordRequest,
-  type RecordRequest,
-} from "@/components/workspace/record-request"
-import { useWorkspace } from "@/components/workspace/workspace-provider"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+import { FlowCanvas, FIT_VIEW_OPTIONS } from "@/components/shared/flow-canvas"
 import { Button } from "@/components/ui/button"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-
-import { type WorkflowRowAction } from "./columns"
-import { type WorkflowItem } from "./data"
-import { WorkflowsDataGridView } from "./data-grid-view"
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import {
-  WorkflowSheet,
-  type WorkflowSheetMode,
-  type WorkflowSheetState,
-} from "./workflow-sheet"
-import { type WorkflowRun } from "./sheet-data"
-import { type WorkflowFormValues } from "./workflow-schema"
+  StatusBadge,
+  WorkbenchNavigation,
+  WorkbenchScreen,
+} from "@/features/workbench/components"
 import {
-  createWorkflow,
-  duplicateWorkflow,
-  recordRun,
-  removeWorkflow,
-  setWorkflowEnabled,
-  updateWorkflow,
-} from "./workflow-store"
+  buildResourceGraph,
+  type ResourceNode,
+} from "@/features/workbench/resource-graph"
+import { useWorkbench } from "@/features/workbench/store"
 
-const SUCCESS_ICON = (
-  <CircleCheckIcon className="size-4 text-success" aria-hidden="true" />
-)
-
-function toCsv(workflows: WorkflowItem[]) {
-  const header = [
-    "ID",
-    "Workflow",
-    "Trigger",
-    "Owner",
-    "Status",
-    "Tags",
-    "Last run",
-    "Runs",
-  ]
-  const rows = workflows.map((workflow) => [
-    workflow.id,
-    workflow.name,
-    workflow.trigger,
-    workflow.owner.name,
-    workflow.enabled ? "On" : "Off",
-    workflow.tags.join("; "),
-    workflow.lastRunAt ?? "",
-    String(workflow.runs),
-  ])
-
-  return [header, ...rows]
-    .map((row) =>
-      row.map((cell) => `"${cell.replaceAll('"', '""')}"`).join(",")
-    )
-    .join("\n")
+const ICONS = {
+  workspace: LayoutDashboardIcon,
+  mail: MailIcon,
+  storage: FilesIcon,
+  todo: ListTodoIcon,
 }
 
-/**
- * Workflows: every workflow in the workspace, from the ReUI
- * data-grid-columns-3 block. Records are created, viewed and edited in the
- * sheet-22 drawer; the steps themselves are built in the Workflow Editor.
- */
-export function Workflows() {
-  const navigate = useNavigate()
-  const { workflows, setWorkflows } = useWorkspace()
-  const [sheet, setSheet] = useState<WorkflowSheetState>({
-    open: false,
-    mode: "create",
-    workflow: null,
-  })
-  const [pendingDelete, setPendingDelete] = useState<WorkflowItem | null>(null)
-  const [deleteOpen, setDeleteOpen] = useState(false)
-
-  const openSheet = useCallback(
-    (mode: WorkflowSheetMode, workflow: WorkflowItem | null) =>
-      setSheet({ open: true, mode, workflow }),
-    []
-  )
-
-  // A link from another page: a notification opens one workflow, the
-  // Dashboard's Add Workflow opens the create sheet.
-  const clearRequest = useClearRecordRequest()
-  const closeSheet = useCallback(() => {
-    setSheet((current) => ({ ...current, open: false }))
-    clearRequest()
-  }, [clearRequest])
-
-  const handleRequest = useCallback(
-    (request: RecordRequest) => {
-      if (request.kind === "create") {
-        openSheet("create", null)
-        return
-      }
-      const workflow = workflows.find((item) => item.id === request.id)
-      if (workflow) {
-        openSheet("view", workflow)
-        return
-      }
-      clearRequest()
-      toast.error("Workflow not found", {
-        description: "It may have been deleted.",
-        closeButton: true,
-      })
-    },
-    [clearRequest, openSheet, workflows]
-  )
-
-  const openInEditor = useCallback(
-    (workflow: WorkflowItem) => {
-      navigate(recordEditorHref("workflow", workflow))
-      toast.message(`Opening ${workflow.name}`, {
-        description: "The Workflow Editor shows its steps.",
-        closeButton: true,
-      })
-    },
-    [navigate]
-  )
-
-  const handleToggle = useCallback(
-    (workflow: WorkflowItem, enabled: boolean) => {
-      setWorkflows((current) =>
-        setWorkflowEnabled(current, workflow.id, enabled)
-      )
-      toast.success(enabled ? "Workflow activated" : "Workflow paused", {
-        description: enabled
-          ? `${workflow.name} runs on its trigger again.`
-          : `${workflow.name} ignores its trigger until you switch it on.`,
-        icon: SUCCESS_ICON,
-        closeButton: true,
-      })
-    },
-    [setWorkflows]
-  )
-
-  const handleDuplicate = useCallback(
-    (workflow: WorkflowItem, { openCopy = false } = {}) => {
-      const result = duplicateWorkflow(workflows, workflow.id)
-      if (!result.copy) return
-      setWorkflows(result.workflows)
-      // From the drawer, the copy opens on Settings to be renamed.
-      if (openCopy) openSheet("edit", result.copy)
-      toast.success("Workflow duplicated", {
-        description: `${result.copy.name} is paused until you switch it on.`,
-        icon: SUCCESS_ICON,
-        closeButton: true,
-      })
-    },
-    [openSheet, setWorkflows, workflows]
-  )
-
-  const requestDelete = useCallback((workflow: WorkflowItem) => {
-    setPendingDelete(workflow)
-    setDeleteOpen(true)
-  }, [])
-
-  const handleAction = useCallback(
-    (action: WorkflowRowAction, workflow: WorkflowItem) => {
-      switch (action) {
-        case "view":
-          openSheet("view", workflow)
-          return
-        case "edit":
-          openSheet("edit", workflow)
-          return
-        case "delete":
-          requestDelete(workflow)
-          return
-        case "open":
-          openInEditor(workflow)
-          return
-        case "duplicate":
-          handleDuplicate(workflow)
-          return
-        case "copy":
-          void navigator.clipboard
-            ?.writeText(workflow.id)
-            .then(() =>
-              toast.success("Workflow ID copied", {
-                description: workflow.id,
-                icon: SUCCESS_ICON,
-                closeButton: true,
-              })
-            )
-            .catch(() =>
-              toast.error("Could not copy the ID", {
-                description: "Your browser blocked clipboard access.",
-                closeButton: true,
-              })
-            )
-          return
-      }
-    },
-    [handleDuplicate, openInEditor, openSheet, requestDelete]
-  )
-
-  function handleSubmit(
-    values: WorkflowFormValues,
-    workflow: WorkflowItem | null
-  ): WorkflowItem | void {
-    if (workflow) {
-      // The drawer stays open on the saved record, as the block keeps it.
-      setWorkflows((current) => updateWorkflow(current, workflow.id, values))
-      toast.success("Workflow saved", {
-        description: `${values.name.trim()} is up to date.`,
-        icon: SUCCESS_ICON,
-        closeButton: true,
-      })
-      return
-    }
-
-    const { workflows: next, created } = createWorkflow(workflows, values)
-    setWorkflows(next)
-    closeSheet()
-    toast.success("Workflow created", {
-      description: `${created.name} is ready for its first steps.`,
-      icon: SUCCESS_ICON,
-      closeButton: true,
-      action: {
-        label: "Open editor",
-        onClick: () => navigate(recordEditorHref("workflow", created)),
-      },
-    })
-    return created
-  }
-
-  function handleRunComplete(workflow: WorkflowItem, run: WorkflowRun) {
-    setWorkflows((current) => recordRun(current, workflow.id, run))
-    toast.success("Run finished", {
-      description: `${workflow.name} processed ${run.items} ${run.items === 1 ? "item" : "items"} in ${run.durationSec}s.`,
-      icon: SUCCESS_ICON,
-      closeButton: true,
-    })
-  }
-
-  function handleConfirmDelete() {
-    if (!pendingDelete) return
-
-    setWorkflows((current) => removeWorkflow(current, pendingDelete.id))
-    setDeleteOpen(false)
-    if (sheet.workflow?.id === pendingDelete.id) {
-      closeSheet()
-    }
-    toast.success("Workflow deleted", {
-      description: `${pendingDelete.name} and its run history are gone.`,
-      icon: SUCCESS_ICON,
-      closeButton: true,
-    })
-  }
-
-  function handleExport() {
-    const blob = new Blob([toCsv(workflows)], { type: "text/csv" })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.href = url
-    link.download = "workflows.csv"
-    link.click()
-    URL.revokeObjectURL(url)
-    toast.success("Workflows exported", {
-      description: `${workflows.length} workflows in workflows.csv`,
-      icon: SUCCESS_ICON,
-      closeButton: true,
-    })
-  }
-
+function ResourceCard({
+  data,
+  sourcePosition,
+  targetPosition,
+}: NodeProps<ResourceNode>) {
+  const Icon = ICONS[data.kind]
   return (
-    <div className="-m-4 flex flex-1 flex-col">
-      <Suspense fallback={null}>
-        <RecordRequestListener onRequest={handleRequest} />
-      </Suspense>
-
-      <HeaderActions>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button type="button" onClick={() => openSheet("create", null)}>
-            <PlusIcon data-icon="inline-start" aria-hidden="true" />
-            <span className="sr-only md:not-sr-only">New workflow</span>
-          </Button>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button variant="ghost" size="icon" aria-label="More options" />
-              }
-            >
-              <MoreHorizontalIcon aria-hidden="true" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent sideOffset={7} align="end">
-              <DropdownMenuGroup>
-                <DropdownMenuItem onClick={handleExport}>
-                  <DownloadIcon aria-hidden="true" />
-                  Export CSV
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => navigate("/settings/execution")}
-                >
-                  <SettingsIcon aria-hidden="true" />
-                  Settings
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </HeaderActions>
-
-      <main
-        className="flex w-full flex-1 flex-col gap-4 p-4"
-        aria-labelledby="page-heading"
-      >
-        <h1 id="page-heading" className="sr-only">
-          Workflows
-        </h1>
-
-        <WorkflowsDataGridView
-          workflows={workflows}
-          onAction={handleAction}
-          onToggle={handleToggle}
-        />
-      </main>
-
-      <WorkflowSheet
-        state={sheet}
-        workflows={workflows}
-        onOpenChange={(open) => {
-          setSheet((current) => ({ ...current, open }))
-          if (!open) clearRequest()
-        }}
-        onSubmit={handleSubmit}
-        onToggle={handleToggle}
-        onRunComplete={handleRunComplete}
-        onOpenInEditor={openInEditor}
-        onDuplicate={(workflow) =>
-          handleDuplicate(workflow, { openCopy: true })
-        }
-        onDelete={(workflow) => {
-          // The drawer closes first, then the confirm opens and owns focus.
-          closeSheet()
-          requestDelete(workflow)
-        }}
+    <>
+      <Handle
+        type="target"
+        position={targetPosition ?? Position.Left}
+        isConnectable={false}
       />
+      <Card
+        size="sm"
+        className="w-64 cursor-grab group-focus-visible/node:outline-2 group-focus-visible/node:outline-ring active:cursor-grabbing"
+      >
+        <CardHeader>
+          <div className="flex items-start gap-2">
+            <Icon
+              className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <CardTitle>
+                <Link
+                  to={data.href}
+                  draggable={false}
+                  className="nodrag nopan block truncate hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  {data.title}
+                </Link>
+              </CardTitle>
+              {data.description && (
+                <CardDescription className="truncate">
+                  {data.description}
+                </CardDescription>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="flex items-center gap-2">
+          {data.status && <StatusBadge status={data.status} />}
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {data.detail}
+          </span>
+        </CardContent>
+      </Card>
+      <Handle
+        type="source"
+        position={sourcePosition ?? Position.Right}
+        isConnectable={false}
+      />
+    </>
+  )
+}
+const NODE_TYPES = { resource: ResourceCard }
 
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent size="sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Workflow?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingDelete?.name ?? "This workflow"} stops running and its run
-              history is removed. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={handleConfirmDelete}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+/** 节点位置由 React Flow 管理；来源状态更新时保留当前拖动位置。 */
+function ResourceCanvas({
+  graph,
+}: {
+  graph: ReturnType<typeof buildResourceGraph>
+}) {
+  const [nodes, setNodes, onNodesChange] = useNodesState(graph.nodes)
+  const positions = useRef<Record<string, XYPosition>>({})
+  const [flowPaused, setFlowPaused] = useState(false)
+  const reduceMotion = useReducedMotion()
+  const edges = useMemo(
+    () =>
+      graph.edges.map((edge) =>
+        reduceMotion || flowPaused ? { ...edge, animated: false } : edge
+      ),
+    [graph.edges, reduceMotion, flowPaused]
+  )
+  useEffect(() => {
+    setNodes((current) => {
+      const existing = new Map(current.map((node) => [node.id, node]))
+      return graph.nodes.map((node) => ({
+        ...existing.get(node.id),
+        ...node,
+        position: positions.current[node.id] ?? node.position,
+      }))
+    })
+  }, [graph.nodes, setNodes])
+  return (
+    <FlowCanvas<ResourceNode, (typeof graph.edges)[number]>
+      showMiniMap={false}
+      nodes={nodes}
+      edges={edges}
+      onNodesChange={(changes) => {
+        for (const change of changes) {
+          if (change.type === "position" && change.position)
+            positions.current[change.id] = change.position
+        }
+        onNodesChange(changes)
+      }}
+      nodeTypes={NODE_TYPES}
+      nodesDraggable
+      nodesConnectable={false}
+      edgesFocusable={false}
+      deleteKeyCode={null}
+      ariaLabelConfig={{
+        "controls.zoomIn.ariaLabel": "放大",
+        "controls.zoomOut.ariaLabel": "缩小",
+        "controls.fitView.ariaLabel": "适应画布",
+      }}
+    >
+      <OverviewControls
+        graphKey={graph.nodes.map((node) => node.id).join("|")}
+        flowPaused={flowPaused}
+        flowDisabled={!!reduceMotion}
+        onToggleFlow={() => setFlowPaused((paused) => !paused)}
+      />
+    </FlowCanvas>
+  )
+}
+
+/** 只有节点集合变化时重新适配视图，普通状态变化保留用户的缩放与位置。 */
+function OverviewControls({
+  graphKey,
+  flowPaused,
+  flowDisabled,
+  onToggleFlow,
+}: {
+  graphKey: string
+  flowPaused: boolean
+  flowDisabled: boolean
+  onToggleFlow: () => void
+}) {
+  const initialized = useNodesInitialized()
+  const { fitView, zoomIn, zoomOut } = useReactFlow()
+  useEffect(() => {
+    if (!initialized) return
+    const frame = window.requestAnimationFrame(() => {
+      void fitView(FIT_VIEW_OPTIONS)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [fitView, graphKey, initialized])
+  return (
+    <Panel position="bottom-left">
+      <Card size="sm">
+        <CardContent className="flex items-center gap-1">
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="缩小总览"
+            onClick={() => {
+              void zoomOut()
+            }}
+          >
+            <MinusIcon aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="放大总览"
+            onClick={() => {
+              void zoomIn()
+            }}
+          >
+            <PlusIcon aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="适应画布"
+            onClick={() => {
+              void fitView(FIT_VIEW_OPTIONS)
+            }}
+          >
+            <MaximizeIcon aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label={flowPaused ? "播放连线动画" : "暂停连线动画"}
+            aria-pressed={flowPaused}
+            disabled={flowDisabled}
+            onClick={onToggleFlow}
+          >
+            {flowPaused ? (
+              <PlayIcon aria-hidden="true" />
+            ) : (
+              <PauseIcon aria-hidden="true" />
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+    </Panel>
+  )
+}
+
+/** 原 Workflow 页面现在展示自动派生的资源关系，不维护独立的图记录。 */
+export function Workflows() {
+  const { data } = useWorkbench()
+  const [params, setParams] = useSearchParams()
+  const category = params.get("category") ?? "all"
+  const graph = useMemo(
+    () => buildResourceGraph(data, category),
+    [category, data]
+  )
+  return (
+    <>
+      <WorkbenchNavigation
+        title="资源分类"
+        sections={[
+          {
+            id: "overview",
+            title: "总览",
+            items: [
+              {
+                id: "all",
+                label: "全部资源",
+                icon: <LayoutDashboardIcon aria-hidden="true" />,
+              },
+            ],
+          },
+          {
+            id: "categories",
+            title: "分类",
+            items: [
+              {
+                id: "mail",
+                label: "邮箱",
+                icon: <MailIcon aria-hidden="true" />,
+                badge: data.accounts.length,
+              },
+              {
+                id: "storage",
+                label: "资产",
+                icon: <FilesIcon aria-hidden="true" />,
+                badge: data.connections.length,
+              },
+              {
+                id: "todo",
+                label: "Todo",
+                icon: <ListTodoIcon aria-hidden="true" />,
+                badge: data.todoLists.length,
+              },
+            ],
+          },
+        ]}
+        activeItem={
+          ["mail", "storage", "todo"].includes(category) ? category : "all"
+        }
+        onItemChange={(id) => setParams(id === "all" ? {} : { category: id })}
+      />
+      <WorkbenchScreen
+        title="Workflow 总览"
+        actions={
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            nativeButton={false}
+            render={<Link to="/dashboard" />}
+          >
+            <LayoutDashboardIcon aria-hidden="true" />
+            Dashboard
+          </Button>
+        }
+      >
+        <div className="-m-4 flex min-h-0 min-w-0 flex-1">
+          <ReactFlowProvider>
+            <ResourceCanvas key={category} graph={graph} />
+          </ReactFlowProvider>
+        </div>
+      </WorkbenchScreen>
+    </>
   )
 }

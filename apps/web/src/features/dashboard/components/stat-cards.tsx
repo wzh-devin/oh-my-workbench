@@ -60,7 +60,7 @@ function DeltaChip({
   return (
     <span
       className={cn(
-        "flex items-center gap-0.5 font-mono text-sm font-medium tabular-nums",
+        "flex items-center gap-0.5 text-sm font-normal tabular-nums",
         good ? "text-success" : "text-destructive"
       )}
     >
@@ -81,7 +81,7 @@ function DeltaChip({
 
 /** The shared card: header, value with its change, a basis line, the
  *  card's own picture, and a footer action pinned under the panel. */
-function StatCard({
+export function StatCard({
   icon,
   title,
   period,
@@ -115,7 +115,7 @@ function StatCard({
         </div>
         <div className="flex flex-col gap-0.5">
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-            <span className="text-2xl leading-8 font-semibold tracking-tight tabular-nums">
+            <span className="text-2xl leading-8 font-medium tracking-tight tabular-nums">
               {value}
               {total === undefined ? null : (
                 <span className="text-base font-normal text-muted-foreground">
@@ -148,7 +148,7 @@ function StatCard({
 }
 
 /** One rounded run per group, sized by its count, then a counted legend. */
-function SegmentBar({
+export function SegmentBar({
   segments,
   label,
 }: {
@@ -184,7 +184,7 @@ function SegmentBar({
             <dt className="min-w-0 truncate text-muted-foreground">
               {segment.label}
             </dt>
-            <dd className="ms-auto font-medium tabular-nums">
+            <dd className="ms-auto font-normal tabular-nums">
               {segment.count}
             </dd>
           </div>

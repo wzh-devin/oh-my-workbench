@@ -14,8 +14,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
-import { type WorkflowRecord } from "./data"
-
 // The grid's footer, as on the Workflows page. It is a local component because
 // its page sizes need the SelectGroup that gives the Select its p-1: listed
 // straight in the popup, the sizes run edge to edge.
@@ -23,12 +21,14 @@ import { type WorkflowRecord } from "./data"
 export const PAGE_SIZES = [5, 10, 20]
 const PAGE_GROUP_LIMIT = 5
 
-export function DataGridPagination({
+export function DataGridPagination<T extends object>({
   table,
   recordCount,
+  recordLabel = "workflows",
 }: {
-  table: DataGridTableInstance<WorkflowRecord>
+  table: DataGridTableInstance<T>
   recordCount: number
+  recordLabel?: string
 }) {
   const pageIndex = table.state.pagination.pageIndex
   const pageSize = table.state.pagination.pageSize
@@ -72,7 +72,7 @@ export function DataGridPagination({
 
       <div className="order-1 flex flex-col items-center justify-center gap-2.5 pt-2.5 sm:order-2 sm:flex-row sm:justify-end sm:pt-0">
         <div className="order-2 text-sm text-nowrap text-muted-foreground sm:order-1">
-          {from} - {to} of {recordCount} workflows
+          {from} - {to} of {recordCount} {recordLabel}
         </div>
 
         {pageCount > 1 ? (
