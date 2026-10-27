@@ -37,7 +37,7 @@ type DirectoryNode = {
   storage?: boolean
 }
 
-/** 复用 ReUI c-tree-3 的单行目录结构及 Headless Tree 键盘、展开和选中行为。 */
+/** 采用 ReUI c-tree-5 的目录图标，保留导航字号及 Headless Tree 交互。 */
 function AssetDirectoryTree({
   data,
   connectionId,
@@ -183,7 +183,16 @@ function AssetDirectoryTree({
                   <InnerNavLabel
                     item={{
                       label: node.name,
-                      icon: <Icon aria-hidden="true" />,
+                      icon: (
+                        <Icon
+                          aria-hidden="true"
+                          className={
+                            node.storage
+                              ? undefined
+                              : "text-amber-500 dark:text-amber-400"
+                          }
+                        />
+                      ),
                     }}
                     truncate={false}
                   />

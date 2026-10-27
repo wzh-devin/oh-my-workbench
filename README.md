@@ -4,7 +4,7 @@ A workflow automation workspace built with Vite, React 19, TypeScript, Tailwind 
 
 The personal workbench includes a Dashboard, Todo lists, QQ/Gmail inboxes, S3-compatible file assets and a React Flow resource overview. This iteration uses frontend sample data: metadata persists in localStorage and uploaded file bytes in IndexedDB. Mail and storage connections do not contact real services or collect credentials. Clearing browser storage removes these records and files.
 
-The existing workflow/agent editors, settings and simulated sign-in remain available. Their original demo state stays in browser memory.
+The existing workflow/agent editors remain available. The personal sign-in page at `/login` has email/password, Google and GitHub entries; these currently preserve the frontend-only navigation flow and do not authenticate accounts. The user menu’s `退出登录` action returns to `/login` without deleting workbench data. Personal settings and notification read receipts share the workbench's local persistence. Settings include general preferences, profile, notifications and account security. Mail accounts and storage connections stay in the mailbox and assets pages. Account security forms use the `/api/account/security` client contract; the authentication backend is not implemented. Login passwords are not persisted by the frontend.
 
 ## Requirements
 

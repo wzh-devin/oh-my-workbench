@@ -1,30 +1,14 @@
-"use client"
-
-import { useState } from "react"
 import { useNavigate } from "react-router"
-import { Badge } from "@/components/reui/badge"
 import {
-  CircleCheckIcon,
-  CreditCardIcon,
   LogOutIcon,
   PaletteIcon,
+  RefreshCwIcon,
+  SettingsIcon,
   ShieldCheckIcon,
-  UserIcon,
+  UserRoundIcon,
 } from "lucide-react"
-import { toast } from "sonner"
-
 import { ThemeToggle } from "@/components/theme/theme-toggle"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -35,163 +19,118 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { Skeleton } from "@/components/ui/skeleton"
 import { useSidebar } from "@/components/ui/sidebar"
-
-import { USER } from "./data"
-
-const TOAST_SUCCESS_ICON = (
-  <CircleCheckIcon className="size-4 text-success" aria-hidden="true" />
-)
-
-// ── Nav User ──
-// The account menu at the foot of the rail: the signed-in member, links to
-// their own settings, the theme and sign out.
+import { loadWorkbench, useWorkbench } from "@/features/workbench/store"
 
 export function NavUser() {
   const navigate = useNavigate()
   const { isMobile, setOpenMobile } = useSidebar()
-  const [signOutOpen, setSignOutOpen] = useState(false)
-
-  // The menu holds no links of its own (the CLI-owned menu has no link
-  // item), so its rows route. On a phone the drawer goes with the menu.
+  const { data, status } = useWorkbench()
+  const profile = data.profile
+  const initials = Array.from(profile.name).slice(0, 2).join("").toUpperCase()
   function go(href: string) {
     if (isMobile) setOpenMobile(false)
     navigate(href)
   }
-
   return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Open account menu for ${USER.name}`}
-              className="mx-auto aria-expanded:not-hover:bg-transparent"
-            />
-          }
-        >
-          <Avatar className="size-6 rounded-md">
-            <AvatarImage keepMounted src={USER.avatar} alt={USER.name} />
-            {/* The kept image holds the box while it loads or after it fails,
-              so the fallback lies over it instead of beside it. */}
-            <AvatarFallback
-              delay={600}
-              className="absolute inset-0 bg-primary text-[10px] font-semibold text-primary-foreground"
-            >
-              {USER.initials}
-            </AvatarFallback>
-          </Avatar>
-        </DropdownMenuTrigger>
-
-        {/* Content */}
-        <DropdownMenuContent
-          side="right"
-          align="end"
-          sideOffset={8}
-          className="w-60"
-        >
-          <DropdownMenuGroup>
-            <DropdownMenuLabel className="flex items-center gap-2.5 py-2">
-              <Avatar className="size-8 rounded-md">
-                <AvatarImage keepMounted src={USER.avatar} alt={USER.name} />
-                <AvatarFallback
-                  delay={600}
-                  className="absolute inset-0 bg-primary text-xs font-semibold text-primary-foreground"
-                >
-                  {USER.initials}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex min-w-0 flex-col">
-                <span className="text-sm font-semibold text-foreground">
-                  {USER.name}
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="打开用户菜单"
+            className="mx-auto"
+          />
+        }
+      >
+        <Avatar size="sm">
+          <AvatarFallback>
+            <UserRoundIcon className="size-4" aria-hidden="true" />
+          </AvatarFallback>
+        </Avatar>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        side="right"
+        align="end"
+        sideOffset={8}
+        className="w-60 max-w-[calc(100vw-2rem)]"
+      >
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="flex min-w-0 items-center gap-2">
+            <Avatar>
+              <AvatarFallback>
+                {status === "ready" ? (
+                  initials
+                ) : (
+                  <UserRoundIcon className="size-4" aria-hidden="true" />
+                )}
+              </AvatarFallback>
+            </Avatar>
+            {status === "loading" ? (
+              <Skeleton className="h-8 w-32" />
+            ) : (
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="truncate text-sm font-medium">
+                  {status === "ready" ? profile.name : "个人账户"}
                 </span>
-                <span className="truncate text-xs font-normal text-muted-foreground">
-                  {USER.email}
-                </span>
+                {status === "ready" && profile.email && (
+                  <span className="truncate text-xs font-normal text-muted-foreground">
+                    {profile.email}
+                  </span>
+                )}
               </div>
-            </DropdownMenuLabel>
-          </DropdownMenuGroup>
-
-          <DropdownMenuSeparator />
-
-          <DropdownMenuGroup>
-            <DropdownMenuItem onClick={() => go("/settings/profile")}>
-              <UserIcon aria-hidden="true" />
-              View Profile
+            )}
+          </DropdownMenuLabel>
+          {status === "error" && (
+            <DropdownMenuItem onClick={loadWorkbench}>
+              <RefreshCwIcon aria-hidden="true" />
+              重新读取资料
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => go("/settings/security")}>
-              <ShieldCheckIcon aria-hidden="true" />
-              Account Security
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => go("/settings/billing")}>
-              <CreditCardIcon aria-hidden="true" />
-              Billing
-              <Badge variant="primary-light" size="xs" className="ml-auto">
-                Pro
-              </Badge>
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-
-          <DropdownMenuSeparator />
-
-          <DropdownMenuGroup>
-            {/* The swatches set a value in place, so the menu outlives the click. */}
-            <DropdownMenuItem
-              closeOnClick={false}
-              className="cursor-default focus:bg-transparent!"
-            >
-              <PaletteIcon aria-hidden="true" />
-              Theme
-              <div className="ml-auto">
-                <ThemeToggle />
-              </div>
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-
-          <DropdownMenuSeparator />
-
-          <DropdownMenuItem
-            variant="destructive"
-            onClick={() => setSignOutOpen(true)}
-          >
-            <LogOutIcon aria-hidden="true" />
-            Sign Out
+          )}
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuItem onClick={() => go("/settings/profile")}>
+            <UserRoundIcon aria-hidden="true" />
+            个人资料
           </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      {/* Outside the menu, which closes as the dialog opens. */}
-      <AlertDialog open={signOutOpen} onOpenChange={setSignOutOpen}>
-        <AlertDialogContent size="sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Sign Out?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Runs and agents keep working while you are away. Sign in again to
-              pick up where you left off.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => {
-                setSignOutOpen(false)
-                // No real session to end: signing out returns to /login.
-                navigate("/login")
-                toast.success("Signed out", {
-                  icon: TOAST_SUCCESS_ICON,
-                  description: `${USER.email} is signed out on this device.`,
-                  closeButton: true,
-                })
-              }}
-            >
-              Sign Out
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+          <DropdownMenuItem onClick={() => go("/settings/security")}>
+            <ShieldCheckIcon aria-hidden="true" />
+            账号安全
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => go("/settings/general")}>
+            <SettingsIcon aria-hidden="true" />
+            设置
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuItem
+            closeOnClick={false}
+            className="cursor-default focus:bg-transparent!"
+          >
+            <PaletteIcon aria-hidden="true" />
+            主题
+            <div className="ml-auto">
+              <ThemeToggle />
+            </div>
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          onClick={() => {
+            if (isMobile) setOpenMobile(false)
+            navigate("/login", { replace: true })
+          }}
+        >
+          <LogOutIcon aria-hidden="true" />
+          退出登录
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

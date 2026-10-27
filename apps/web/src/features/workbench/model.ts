@@ -4,6 +4,24 @@ const timestamp = z
   .string()
   .refine((value) => Number.isFinite(Date.parse(value)), "日期格式不正确")
 const connectionStatus = z.enum(["connected", "error", "paused"])
+export const personalProfileSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "请输入显示名称")
+    .max(100, "显示名称最多 100 字"),
+  email: z.union([z.email("请输入有效的邮箱地址"), z.literal("")]),
+})
+const preferencesSchema = z.object({
+  assetLayout: z.enum(["list", "grid"]).default("list"),
+  notifications: z
+    .object({
+      todos: z.boolean().default(true),
+      mail: z.boolean().default(true),
+      connections: z.boolean().default(true),
+    })
+    .prefault({}),
+})
 const namedRecord = z.object({
   id: z.string().min(1),
   name: z.string().min(1).max(100),
@@ -101,6 +119,9 @@ export const todoSchema = z.object({
 export const workbenchSchema = z
   .object({
     version: z.literal(1),
+    profile: personalProfileSchema.prefault({ name: "我的账户", email: "" }),
+    preferences: preferencesSchema.prefault({}),
+    notificationReadIds: z.array(z.string()).default([]),
     todoLists: z.array(namedRecord),
     todos: z.array(todoSchema),
     accounts: z.array(accountSchema),

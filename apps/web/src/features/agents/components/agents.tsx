@@ -304,9 +304,7 @@ export function Agents() {
                   Export CSV
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => navigate("/settings/ai-models")}
-                >
+                <DropdownMenuItem onClick={() => navigate("/settings/general")}>
                   <SettingsIcon aria-hidden="true" />
                   Settings
                 </DropdownMenuItem>

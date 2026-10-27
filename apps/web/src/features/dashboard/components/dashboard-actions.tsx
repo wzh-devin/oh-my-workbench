@@ -106,7 +106,7 @@ export function DashboardActions({
               Copy link
             </DropdownMenuItem>
 
-            <DropdownMenuItem onClick={() => navigate("/settings/members")}>
+            <DropdownMenuItem onClick={handleCopyLink}>
               <Share2Icon aria-hidden="true" />
               Share
             </DropdownMenuItem>
@@ -118,7 +118,7 @@ export function DashboardActions({
 
             <DropdownMenuSeparator />
 
-            <DropdownMenuItem onClick={() => navigate("/settings/execution")}>
+            <DropdownMenuItem onClick={() => navigate("/settings/general")}>
               <SettingsIcon aria-hidden="true" />
               Settings
             </DropdownMenuItem>

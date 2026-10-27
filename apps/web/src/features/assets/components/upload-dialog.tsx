@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState } from "react"
-import {
-  CheckIcon,
-  FileIcon,
-  FolderPlusIcon,
-  UploadCloudIcon,
-  XIcon,
-} from "lucide-react"
+import { CheckIcon, FolderPlusIcon, UploadCloudIcon, XIcon } from "lucide-react"
+import { AssetFileIcon } from "./asset-file-icon"
 import { Alert, AlertDescription } from "@/components/reui/alert"
 import { Badge } from "@/components/reui/badge"
 import { Button } from "@/components/ui/button"
@@ -262,10 +257,7 @@ export function UploadDialog({
           <div className="flex flex-col gap-3">
             {upload.files.map((record) => (
               <div key={record.id} className="flex min-w-0 items-start gap-2">
-                <FileIcon
-                  className="size-4 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                />
+                <AssetFileIcon file={record.file} size="xs" />
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <span
                     className="truncate text-sm"

@@ -3,9 +3,9 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   DownloadIcon,
-  FileIcon,
   XIcon,
 } from "lucide-react"
+import { AssetFileIcon } from "./asset-file-icon"
 import { Alert, AlertDescription, AlertTitle } from "@/components/reui/alert"
 import { Button } from "@/components/ui/button"
 import {
@@ -134,10 +134,7 @@ export function AssetPreview({
       >
         <DialogHeader>
           <div className="flex min-w-0 items-center gap-2">
-            <FileIcon
-              className="size-4 shrink-0 text-muted-foreground"
-              aria-hidden="true"
-            />
+            <AssetFileIcon file={asset} />
             <DialogTitle className="min-w-0 flex-1 truncate" title={asset.name}>
               {asset.name}
             </DialogTitle>
@@ -261,10 +258,7 @@ export function AssetPreview({
               )}
               {kind === "unsupported" && (
                 <div className="flex min-h-64 flex-col items-center justify-center gap-4">
-                  <FileIcon
-                    className="size-12 text-muted-foreground"
-                    aria-hidden="true"
-                  />
+                  <AssetFileIcon file={asset} size="xl" />
                   <p className="text-sm">此文件暂不支持预览</p>
                   <Button
                     type="button"

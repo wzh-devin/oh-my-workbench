@@ -1,18 +1,16 @@
 import { Fragment, useState } from "react"
 import { Link, useSearchParams } from "react-router"
+import { cn } from "cn"
 import {
   ArrowDownAZIcon,
   ArrowLeftIcon,
   DownloadIcon,
-  FileIcon,
   FolderIcon,
   FolderOpenIcon,
   FolderPlusIcon,
   Grid2X2Icon,
   HardDriveIcon,
-  ImageIcon,
   ListIcon,
-  MusicIcon,
   MoreHorizontalIcon,
   PlusIcon,
   RotateCcwIcon,
@@ -20,7 +18,6 @@ import {
   StarIcon,
   Trash2Icon,
   UploadIcon,
-  VideoIcon,
   XIcon,
 } from "lucide-react"
 import type { ColumnDef, Row } from "@tanstack/react-table"
@@ -43,7 +40,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import {
@@ -84,6 +81,7 @@ import { recordOpened, starEntries } from "../asset-store"
 import { useAssetOperations } from "../use-asset-operations"
 import { droppedFiles } from "../file-drop"
 import { AssetActions } from "./asset-actions"
+import { AssetFileIcon } from "./asset-file-icon"
 import {
   AssetActionDialog,
   AssetDeleteDialog,
@@ -145,25 +143,15 @@ const EntryIcon = ({
   entry: AssetEntry
   large?: boolean
 }) => {
-  const kind = entry.kind === "folder" ? "文件夹" : assetKind(entry)
-  const Icon =
-    kind === "文件夹"
-      ? FolderIcon
-      : kind === "图片"
-        ? ImageIcon
-        : kind === "视频"
-          ? VideoIcon
-          : kind === "音频"
-            ? MusicIcon
-            : FileIcon
+  if (entry.kind === "file")
+    return <AssetFileIcon file={entry} size={large ? "xl" : "mini"} />
   return (
-    <Icon
+    <FolderIcon
       aria-hidden="true"
-      className={
-        large
-          ? "size-12 text-muted-foreground"
-          : "size-4 shrink-0 text-muted-foreground"
-      }
+      className={cn(
+        "shrink-0 text-amber-500 dark:text-amber-400",
+        large ? "size-14" : "size-4"
+      )}
     />
   )
 }
@@ -180,7 +168,10 @@ export function Assets() {
   )
     ? viewParam
     : "files"
-  const layout = params.get("layout") === "grid" ? "grid" : "list"
+  const layout =
+    (params.get("layout") ?? data.preferences.assetLayout) === "grid"
+      ? "grid"
+      : "list"
   const [search, setSearch] = useState("")
   const [query, setQuery] = useState(() => createFilterQuery())
   const [sort, setSort] = useState("name")
@@ -246,7 +237,7 @@ export function Assets() {
     if (sourceId !== "all") next.set("connection", sourceId)
     if (folderId) next.set("folder", folderId)
     if (nextView !== "files") next.set("view", nextView)
-    if (layout === "grid") next.set("layout", layout)
+    if (layout !== data.preferences.assetLayout) next.set("layout", layout)
     setSearch("")
     setQuery(createFilterQuery())
     setSelectedIds([])
@@ -274,10 +265,15 @@ export function Assets() {
       setParams(next)
     }
   }
-  const entryHref = (entry: AssetEntry) =>
-    entry.kind === "file"
-      ? assetHref(entry)
-      : `/assets?${new URLSearchParams({ connection: entry.connectionId, folder: entry.id, ...(layout === "grid" ? { layout } : {}) })}`
+  const entryHref = (entry: AssetEntry) => {
+    const href =
+      entry.kind === "file"
+        ? assetHref(entry)
+        : `/assets?${new URLSearchParams({ connection: entry.connectionId, folder: entry.id })}`
+    return layout === data.preferences.assetLayout
+      ? href
+      : `${href}&layout=${layout}`
+  }
   const toggleSelected = (id: string, checked: boolean) =>
     setSelectedIds((current) =>
       checked
@@ -311,9 +307,9 @@ export function Assets() {
       onDetails={(record) => setDetailId(record.id)}
     />
   )
-  const nameFor = (entry: AssetEntry) => (
+  const nameFor = (entry: AssetEntry, preview = false) => (
     <div className="flex min-w-0 items-center gap-2">
-      <EntryIcon entry={entry} />
+      {!preview && <EntryIcon entry={entry} />}
       {view === "trash" ? (
         <Button
           type="button"
@@ -326,7 +322,10 @@ export function Assets() {
         </Button>
       ) : (
         <Link
-          className="min-w-0 truncate text-sm font-normal transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
+          className={cn(
+            "min-w-0 text-sm font-normal transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-ring",
+            preview ? "flex w-full flex-col items-center gap-4" : "truncate"
+          )}
           title={entry.name}
           to={entryHref(entry)}
           onClick={(event) => {
@@ -341,7 +340,8 @@ export function Assets() {
             }
           }}
         >
-          {entry.name}
+          {preview && <EntryIcon entry={entry} large />}
+          <span className="w-full truncate">{entry.name}</span>
         </Link>
       )}
       {entry.starred && (
@@ -600,7 +600,7 @@ export function Assets() {
             aria-pressed={layout === id}
             onClick={() => {
               const next = new URLSearchParams(params)
-              if (id === "list") next.delete("layout")
+              if (id === data.preferences.assetLayout) next.delete("layout")
               else next.set("layout", id)
               setParams(next, { replace: true })
             }}
@@ -1027,69 +1027,67 @@ export function Assets() {
                     empty={empty}
                   />
                 ) : (
-                  <Card>
-                    <CardHeader>
-                      <div className="flex flex-wrap items-center gap-3">
-                        <div className="flex items-center gap-2">
-                          {selectAll}
-                          <h2 className="text-sm font-medium">{title}</h2>
-                          <span className="text-xs text-muted-foreground tabular-nums">
-                            {records.length}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
-                          {toolbar}
-                        </div>
+                  <div className="flex min-w-0 flex-col gap-4">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        {selectAll}
+                        <h2 className="text-sm font-medium">{title}</h2>
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {records.length}
+                        </span>
                       </div>
-                    </CardHeader>
-                    <CardContent>
-                      {records.length ? (
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                          {records
-                            .slice(page * 24, (page + 1) * 24)
-                            .map((entry) => (
-                              <Card
-                                key={entry.id}
-                                size="sm"
-                                className={
-                                  selectedIds.includes(entry.id)
-                                    ? "bg-accent"
-                                    : undefined
-                                }
-                              >
-                                <CardHeader>
-                                  <div className="flex items-center justify-between gap-2">
-                                    <Checkbox
-                                      aria-label={`选择：${entry.name}`}
-                                      checked={selectedIds.includes(entry.id)}
-                                      onCheckedChange={(checked) =>
-                                        toggleSelected(entry.id, checked)
-                                      }
-                                    />
-                                    {actionsFor(entry)}
-                                  </div>
-                                </CardHeader>
-                                <CardContent>
-                                  <div className="flex flex-col items-center gap-4">
+                      <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+                        {toolbar}
+                      </div>
+                    </div>
+                    {records.length ? (
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        {records
+                          .slice(page * 24, (page + 1) * 24)
+                          .map((entry) => (
+                            <Card
+                              key={entry.id}
+                              size="sm"
+                              className={
+                                selectedIds.includes(entry.id)
+                                  ? "bg-accent"
+                                  : undefined
+                              }
+                            >
+                              <CardHeader>
+                                <div className="flex items-center justify-between gap-2">
+                                  <Checkbox
+                                    aria-label={`选择：${entry.name}`}
+                                    checked={selectedIds.includes(entry.id)}
+                                    onCheckedChange={(checked) =>
+                                      toggleSelected(entry.id, checked)
+                                    }
+                                  />
+                                  {actionsFor(entry)}
+                                </div>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="flex flex-col items-center gap-4">
+                                  {view === "trash" && (
                                     <EntryIcon entry={entry} large />
-                                    <div className="w-full min-w-0">
-                                      {nameFor(entry)}
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                      {entry.kind === "file"
-                                        ? `${assetKind(entry)} · ${formatSize(entry.size)}`
-                                        : "文件夹"}
-                                    </p>
+                                  )}
+                                  <div className="w-full min-w-0">
+                                    {nameFor(entry, true)}
                                   </div>
-                                </CardContent>
-                              </Card>
-                            ))}
-                        </div>
-                      ) : (
-                        empty
-                      )}
-                    </CardContent>
-                    <CardFooter className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="text-xs text-muted-foreground">
+                                    {entry.kind === "file"
+                                      ? `${assetKind(entry)} · ${formatSize(entry.size)}`
+                                      : "文件夹"}
+                                  </p>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                      </div>
+                    ) : (
+                      empty
+                    )}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-xs text-muted-foreground tabular-nums">
                         {records.length} 项
                       </span>
@@ -1117,8 +1115,8 @@ export function Assets() {
                           下一页
                         </Button>
                       </div>
-                    </CardFooter>
-                  </Card>
+                    </div>
+                  </div>
                 )}
               </>
             )}
