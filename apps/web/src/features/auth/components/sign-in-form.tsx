@@ -1,9 +1,10 @@
 "use client"
 
-import { useNavigate } from "react-router"
+import { useEffect } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 
+import { Alert, AlertDescription } from "@/components/reui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -14,25 +15,44 @@ import {
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
-
-import { AUTH_PROVIDERS, SIGNED_IN_HREF } from "./data"
+import { useAuth } from "../auth-context"
+import { AUTH_PROVIDERS } from "./data"
 import {
   signInDefaultValues,
   signInSchema,
   type SignInValues,
 } from "./sign-in-schema"
 
-export function SignInForm() {
-  const navigate = useNavigate()
+/** 用户名密码认证失败时保留输入，成功后的导航由共享会话状态驱动。 */
+export function SignInForm({
+  username = "",
+  disabled = false,
+}: {
+  username?: string
+  disabled?: boolean
+}) {
+  const auth = useAuth()
   const form = useForm<SignInValues>({
     resolver: zodResolver(signInSchema),
     defaultValues: signInDefaultValues,
   })
   const { errors, isSubmitting } = form.formState
+  const busy = disabled || isSubmitting
+  useEffect(() => {
+    form.setValue("username", username)
+    if (username) form.setFocus("password")
+  }, [username, form])
 
-  function signIn() {
-    // shortcut: 保留现有前端跳转；接入认证后端时替换为密码验证及 Google/GitHub OAuth。
-    navigate(SIGNED_IN_HREF, { replace: true })
+  /** 会话确认前不离开表单，避免服务失败时丢失重试入口。 */
+  const signIn = async (values: SignInValues) => {
+    form.clearErrors("root")
+    try {
+      await auth.login(values)
+    } catch (error) {
+      form.setError("root", {
+        message: error instanceof Error ? error.message : "登录失败，请重试",
+      })
+    }
   }
 
   return (
@@ -43,25 +63,34 @@ export function SignInForm() {
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
-        <form onSubmit={form.handleSubmit(signIn)} noValidate>
+        <form
+          onSubmit={form.handleSubmit(signIn)}
+          noValidate
+          aria-busy={isSubmitting}
+        >
           <FieldGroup>
-            <Field data-invalid={!!errors.email}>
-              <FieldLabel htmlFor="auth-email">邮箱</FieldLabel>
+            <Field data-invalid={!!errors.username}>
+              <FieldLabel htmlFor="auth-username">用户名</FieldLabel>
               <Input
-                {...form.register("email")}
-                id="auth-email"
-                type="email"
+                {...form.register("username")}
+                id="auth-username"
+                placeholder="请输入用户名"
                 autoComplete="username"
-                inputMode="email"
                 autoCapitalize="none"
                 spellCheck={false}
-                maxLength={254}
+                maxLength={64}
                 required
-                aria-invalid={!!errors.email}
-                aria-describedby={errors.email ? "auth-email-error" : undefined}
+                disabled={busy}
+                aria-invalid={!!errors.username}
+                aria-describedby={
+                  errors.username ? "auth-username-error" : undefined
+                }
               />
-              {errors.email && (
-                <FieldError id="auth-email-error" errors={[errors.email]} />
+              {errors.username && (
+                <FieldError
+                  id="auth-username-error"
+                  errors={[errors.username]}
+                />
               )}
             </Field>
             <Field data-invalid={!!errors.password}>
@@ -69,9 +98,12 @@ export function SignInForm() {
               <Input
                 {...form.register("password")}
                 id="auth-password"
+                placeholder="请输入密码"
                 type="password"
                 autoComplete="current-password"
+                maxLength={24}
                 required
+                disabled={busy}
                 aria-invalid={!!errors.password}
                 aria-describedby={
                   errors.password ? "auth-password-error" : undefined
@@ -84,8 +116,13 @@ export function SignInForm() {
                 />
               )}
             </Field>
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-              登录
+            {errors.root && (
+              <Alert variant="destructive">
+                <AlertDescription>{errors.root.message}</AlertDescription>
+              </Alert>
+            )}
+            <Button type="submit" className="w-full" disabled={busy}>
+              {isSubmitting ? "正在登录…" : "登录"}
             </Button>
           </FieldGroup>
         </form>
@@ -101,8 +138,8 @@ export function SignInForm() {
               type="button"
               variant="outline"
               className="w-full"
-              disabled={isSubmitting}
-              onClick={signIn}
+              disabled
+              title="暂不可用"
             >
               {provider.logo}
               {provider.label}

@@ -27,5 +27,3 @@ export const AUTH_PROVIDERS = [
     ),
   },
 ]
-
-export const SIGNED_IN_HREF = "/dashboard"

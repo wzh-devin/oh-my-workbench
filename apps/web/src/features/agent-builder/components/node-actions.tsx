@@ -984,6 +984,7 @@ function StepForm({ onSubmit }: { onSubmit: (values: NodeValues) => void }) {
                 <Input
                   {...field}
                   id="node-title"
+                  placeholder="Enter node title"
                   aria-invalid={fieldState.invalid}
                   aria-describedby={
                     fieldState.invalid ? "node-title-error" : undefined
@@ -1048,6 +1049,7 @@ function StepForm({ onSubmit }: { onSubmit: (values: NodeValues) => void }) {
                   <Input
                     {...field}
                     id="node-path"
+                    placeholder="e.g. Approved"
                     aria-invalid={fieldState.invalid}
                     aria-describedby={
                       fieldState.invalid ? "node-path-error" : undefined

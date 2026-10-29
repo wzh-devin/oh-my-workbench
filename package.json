@@ -9,14 +9,16 @@
   },
   "scripts": {
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
-    "build": "pnpm --filter @workbench/web build && pnpm --filter @workbench/api build",
-    "start": "pnpm --filter @workbench/api start",
+    "build": "pnpm --filter @workbench/web build && cd apps/api && go build -o bin/server ./cmd/server",
+    "start": "cd apps/api && ./bin/server",
     "lint": "eslint .",
-    "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test",
-    "test:watch": "pnpm --parallel -r test:watch",
+    "typecheck": "pnpm --filter @workbench/web typecheck && cd apps/api && go vet ./...",
+    "test": "pnpm --filter @workbench/web test && cd apps/api && go test ./...",
+    "test:watch": "pnpm --filter @workbench/web test:watch",
     "format": "prettier --write \"apps/**/*.{ts,tsx,css}\"",
-    "format:check": "prettier --check \"apps/**/*.{ts,tsx,css}\""
+    "format:check": "prettier --check \"apps/**/*.{ts,tsx,css}\"",
+    "dev:web": "pnpm --filter @workbench/web dev",
+    "dev:api": "pnpm --filter @workbench/api dev"
   },
   "devDependencies": {
     "@eslint/compat": "^2.1.1",

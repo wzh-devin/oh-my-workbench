@@ -198,6 +198,13 @@ function SecurityFormDialog({
                 <Input
                   id={`${id}-${field.name}`}
                   type={field.type}
+                  placeholder={
+                    field.name === "email"
+                      ? "name@example.com"
+                      : field.name === "code"
+                        ? "请输入 6 位验证码"
+                        : `请输入${field.label}`
+                  }
                   autoComplete={field.autoComplete}
                   inputMode={field.name === "code" ? "numeric" : undefined}
                   maxLength={field.name === "code" ? 6 : 256}
@@ -376,7 +383,12 @@ function MfaSetupDialog({
                 <Field>
                   <FieldLabel htmlFor={`${id}-secret`}>设置密钥</FieldLabel>
                   <div className="flex items-center gap-2">
-                    <Input id={`${id}-secret`} readOnly value={setup.secret} />
+                    <Input
+                      id={`${id}-secret`}
+                      placeholder="双重验证密钥"
+                      readOnly
+                      value={setup.secret}
+                    />
                     <Button
                       type="button"
                       size="icon-sm"
@@ -399,6 +411,7 @@ function MfaSetupDialog({
                   <FieldLabel htmlFor={`${id}-code`}>动态验证码</FieldLabel>
                   <Input
                     id={`${id}-code`}
+                    placeholder="请输入 6 位验证码"
                     inputMode="numeric"
                     autoComplete="one-time-code"
                     maxLength={6}

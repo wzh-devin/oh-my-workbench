@@ -83,6 +83,7 @@ function ProfileSettings() {
             <SettingRow title="显示名称" labelFor={`${id}-name`}>
               <Input
                 id={`${id}-name`}
+                placeholder="请输入显示名称"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 required
@@ -93,6 +94,7 @@ function ProfileSettings() {
             <SettingRow title="联系邮箱（选填）" labelFor={`${id}-email`} last>
               <Input
                 id={`${id}-email`}
+                placeholder="name@example.com"
                 value={email}
                 type="email"
                 onChange={(event) => setEmail(event.target.value)}

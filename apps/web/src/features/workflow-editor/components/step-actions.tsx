@@ -995,6 +995,7 @@ function StepPanel() {
                         <Input
                           {...field}
                           id="step-title"
+                          placeholder="Enter step title"
                           aria-invalid={fieldState.invalid}
                           aria-describedby={
                             fieldState.invalid ? "step-title-error" : undefined
@@ -1029,6 +1030,7 @@ function StepPanel() {
                         <Textarea
                           {...field}
                           id="step-detail"
+                          placeholder="Describe this step"
                           rows={3}
                           aria-invalid={fieldState.invalid}
                           aria-describedby={

@@ -1,15 +1,16 @@
 # Flowly / oh-my-workbench
 
-A workflow automation workspace built with Vite, React 19, TypeScript, Tailwind CSS 4 and ReUI, with a Hono Node.js API. The repository uses pnpm workspaces.
+A workflow automation workspace built with Vite, React 19, TypeScript, Tailwind CSS 4 and ReUI, with a Go/Gin API. The repository uses pnpm workspaces.
 
 The personal workbench includes a Dashboard, Todo lists, QQ/Gmail inboxes, S3-compatible file assets and a React Flow resource overview. This iteration uses frontend sample data: metadata persists in localStorage and uploaded file bytes in IndexedDB. Mail and storage connections do not contact real services or collect credentials. Clearing browser storage removes these records and files.
 
-The existing workflow/agent editors remain available. The personal sign-in page at `/login` has email/password, Google and GitHub entries; these currently preserve the frontend-only navigation flow and do not authenticate accounts. The user menu’s `退出登录` action returns to `/login` without deleting workbench data. Personal settings and notification read receipts share the workbench's local persistence. Settings include general preferences, profile, notifications and account security. Mail accounts and storage connections stay in the mailbox and assets pages. Account security forms use the `/api/account/security` client contract; the authentication backend is not implemented. Login passwords are not persisted by the frontend.
+The existing workflow/agent editors remain available. On first deployment, `/login` detects an uninitialized system and opens an administrator setup dialog. After setup, sign in with that administrator's username and password. Sessions use HttpOnly cookies and Redis; refreshing restores the session, protected routes require authentication, and `退出登录` revokes the server session without deleting workbench records. Google/GitHub entries remain disabled until OAuth is implemented. Personal display preferences and workbench data retain their existing local persistence. Account-security forms still use the separate, currently unavailable `/api/account/security` contract.
 
 ## Requirements
 
 - Node.js matching `.nvmrc` (22.23.4) and `engines.node` in the root package.
 - pnpm 12.6.0, pinned by `packageManager`.
+- Go 1.26.5, PostgreSQL and Redis. Copy `apps/api/.env.example` to `apps/api/.env` and configure the connections and JWT secret before starting.
 
 ```sh
 nvm use
@@ -20,7 +21,7 @@ pnpm dev
 
 Open http://127.0.0.1:3000. `/` redirects to `/dashboard`.
 
-`pnpm dev` runs Vite on port 3000 and Hono on port 8787. Vite proxies `/api` to Hono, so browser requests use the same origin. Both processes stop with Ctrl+C. The frontend needs no runtime environment variables or API keys.
+`pnpm dev` runs both applications through pnpm workspace scripts: Vite on port 3000 and Go on `localhost:11990`. `apps/api/package.json` supplies the Go development command for this workspace entry. Vite proxies `/api` to Go, so browser requests use the same origin. Both processes stop with Ctrl+C. `API_PROXY_TARGET` can override the Vite proxy target when testing a separate backend. The frontend needs no runtime API keys.
 
 ## Layout
 
@@ -71,12 +72,13 @@ apps/
     tsconfig.json
     package.json
   api/
-    src/
-      app.ts              Hono app factory, API routes and SPA hosting
-      app.test.ts         HTTP and static hosting contract tests
-      index.ts            Node server entry and shutdown
-    tsconfig.json
-    package.json
+    cmd/server/main.go    Go entry point
+    internal/app/         Startup and routes
+    internal/modules/auth/ Administrator setup, password login and sessions
+    internal/platform/    PostgreSQL and Redis
+    internal/shared/      Password hashing, JWT, IDs and response envelope
+    migrations/           Embedded Goose migrations
+    go.mod
 package.json              Workspace commands and shared lint/format tools
 pnpm-workspace.yaml
 pnpm-lock.yaml
@@ -92,17 +94,17 @@ Keep new code with the module that owns it: application wiring in `app`, route e
 
 | Command | Purpose |
 | --- | --- |
-| `pnpm dev` | Start Vite and Hono together |
-| `pnpm build` | Build `apps/web/dist` and `apps/api/dist` |
-| `pnpm start` | Serve the production frontend and API through Hono on port 3000 |
+| `pnpm dev` | Start Vite and Go together |
+| `pnpm build` | Build `apps/web/dist` and `apps/api/bin/server` |
+| `pnpm start` | Start the Go API (serve the frontend separately) |
 | `pnpm typecheck` | Check both applications |
 | `pnpm lint` | Shared ESLint checks |
-| `pnpm test` | Run frontend and API Vitest suites |
-| `pnpm test:watch` | Watch both test suites |
+| `pnpm test` | Run Vitest and Go tests |
+| `pnpm test:watch` | Watch frontend tests |
 | `pnpm format` | Format application TypeScript and CSS |
 | `pnpm format:check` | Check application formatting |
 | `pnpm --filter @workbench/web dev` | Start only the frontend |
-| `pnpm --filter @workbench/api dev` | Start only the API |
+| `pnpm dev:api` | Start only the API |
 
 ## Production
 
@@ -111,13 +113,9 @@ pnpm build
 pnpm start
 ```
 
-Hono serves the frontend build and `/api` on the same port. Frontend asset paths are resolved relative to the server module, so they do not depend on the shell's working directory. Build both applications together before starting. `PORT` overrides the production port; production listens on all network interfaces, while the development API binds to loopback.
+Serve `apps/web/dist` with an HTTPS web server that falls back to `index.html` for client routes and proxies `/api` to the Go service. Go serves API routes only. Configure `COOKIE_SECURE=true`, a strong `JWT_SECRET`, and internal database/Redis endpoints in production. `HTTP_ADDR` overrides the API listen address; the default binds to `localhost:11990`. Preserve the public `Host` header in the reverse proxy so same-origin checks match browser requests.
 
-```sh
-PORT=8080 pnpm start
-```
-
-Direct GET requests to `/settings/general`, `/workflow-editor` and other page paths return `index.html`; React Router resolves the page. Unknown UI routes display the 404 page after client rendering, with HTTP 200 for the SPA shell. Missing assets and unknown API routes return HTTP 404. Deployment therefore requires the built frontend alongside the API; `vite preview` alone does not provide the backend.
+For local HTTP development, set `COOKIE_SECURE=false` as shown in `apps/api/.env.example`; the default is Secure. Complete initial administrator setup before exposing a fresh deployment publicly. The first successful initialization wins, and subsequent initialization attempts return HTTP 409. Existing administrators also keep initialization closed.
 
 ## Routes and API
 
@@ -127,12 +125,19 @@ Todo includes Inbox, smart views, quick capture, due dates, daily planning, prio
 
 Existing editor and settings URLs are preserved: `/workflow-editor`, `/agents`, `/agent-builder`, `/settings/:section` and `/login`. `/settings` redirects to `/settings/general`; unsupported settings sections display the 404 page. Editor record parameters continue to work. Route titles use React 19's document metadata support.
 
-```sh
-curl http://127.0.0.1:3000/api/health
-# {"ok":true}
-```
+Authentication endpoints all use `{ code, message, data }`:
 
-The API currently provides only the health check. Unknown `/api` routes return `404 {"error":"Not found"}`. Hono handles unexpected errors with a generic JSON 500 response and logs the error server-side. No database, authentication or server-side workflow execution is included.
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/api/auth/status` | Read `{ initialized }` |
+| POST | `/api/auth/initSystemAdmin` | Create the first administrator using `{ username, password }` |
+| POST | `/api/auth/login` | Authenticate and set the session cookie; return `{ token, user }` |
+| GET | `/api/auth/me` | Restore `{ user, expiresAt }` from a valid session |
+| POST | `/api/auth/logout` | Revoke the session and clear its cookie |
+
+Usernames contain 1–64 characters after trimming, and passwords contain 6–24 characters without trimming. Ten failed password attempts for a username temporarily limit that username for up to 60 seconds (HTTP 429). IDs are strings in JSON to preserve BIGINT precision. The API also accepts Bearer tokens for authenticated API callers. Unknown API routes return 404; authentication and infrastructure failures are never treated as successful login.
+
+Go integration tests use `TEST_DATABASE_URL` and `TEST_REDIS_ADDR` against disposable services. They create temporary PostgreSQL schemas and use Redis database 15; do not point those variables at a shared or production Redis database.
 
 ## Design system and local fonts
 
@@ -145,6 +150,10 @@ cd apps/web
 pnpm exec shadcn add button
 ```
 
-The root `.env.example` documents the optional `REUI_LICENSE_KEY` needed to install premium ReUI components. Copy it to `apps/web/.env.local` only when installing those components, or supply the key through your shell. Existing root `.env.local` is preserved and ignored. Vite does not expose this key to the browser; never use a `VITE_` prefix for secrets. API runtime environment is managed separately by the Node process.
+The root `.env.example` documents the optional `REUI_LICENSE_KEY` needed to install premium ReUI components. Copy it to `apps/web/.env.local` only when installing those components, or supply the key through your shell. Existing root `.env.local` is preserved and ignored. Vite does not expose this key to the browser; never use a `VITE_` prefix for secrets. API runtime environment is managed separately by the Go process.
 
 See `AGENTS.md` and `.agents/skills/reui/SKILL.md` for the project rules, and `LICENSE.md` for the template license.
+
+## Go API 数据库迁移
+
+Go API 启动时使用 Goose 执行嵌入的 SQL 迁移，并在数据库中记录版本。开发命令与迁移写法见 [apps/api/README.md](apps/api/README.md)。

@@ -161,6 +161,7 @@ export function TodoEditor({
                 <FieldLabel htmlFor={`${id}-title`}>待办内容</FieldLabel>
                 <Input
                   id={`${id}-title`}
+                  placeholder="请输入待办名称"
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
                   maxLength={200}
@@ -251,6 +252,7 @@ export function TodoEditor({
                     />
                     <Input
                       aria-label={`步骤 ${index + 1}`}
+                      placeholder="请输入步骤内容"
                       value={step.title}
                       maxLength={200}
                       onChange={(event) =>
@@ -309,6 +311,7 @@ export function TodoEditor({
                 <FieldLabel htmlFor={`${id}-note`}>备注</FieldLabel>
                 <Textarea
                   id={`${id}-note`}
+                  placeholder="添加备注"
                   value={note}
                   maxLength={2000}
                   onChange={(event) => setNote(event.target.value)}

@@ -154,6 +154,7 @@ export function AssetActionDialog({
               <FieldLabel htmlFor={inputId}>名称</FieldLabel>
               <Input
                 id={inputId}
+                placeholder="请输入名称"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 maxLength={200}

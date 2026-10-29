@@ -1,4 +1,6 @@
+import { useState } from "react"
 import { useNavigate } from "react-router"
+import { toast } from "sonner"
 import {
   LogOutIcon,
   PaletteIcon,
@@ -21,17 +23,42 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSidebar } from "@/components/ui/sidebar"
+import { useAuth } from "@/features/auth/auth-context"
+import { SEED_WORKBENCH } from "@/features/workbench/model"
 import { loadWorkbench, useWorkbench } from "@/features/workbench/store"
 
+/** 用户菜单使用真实会话身份，退出失败时保留当前页面并允许重试。 */
 export function NavUser() {
   const navigate = useNavigate()
   const { isMobile, setOpenMobile } = useSidebar()
+  const { user, logout } = useAuth()
   const { data, status } = useWorkbench()
-  const profile = data.profile
+  const [loggingOut, setLoggingOut] = useState(false)
+  const profile = {
+    name:
+      data.profile.name === SEED_WORKBENCH.profile.name
+        ? user?.displayName || user?.username || data.profile.name
+        : data.profile.name,
+    email: data.profile.email || user?.email || user?.username,
+  }
   const initials = Array.from(profile.name).slice(0, 2).join("").toUpperCase()
   function go(href: string) {
     if (isMobile) setOpenMobile(false)
     navigate(href)
+  }
+  /** 撤销失败时保留当前会话，避免界面误显示已退出。 */
+  const signOut = async () => {
+    if (loggingOut) return
+    setLoggingOut(true)
+    try {
+      await logout()
+      if (isMobile) setOpenMobile(false)
+      navigate("/login", { replace: true })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "退出失败，请重试")
+    } finally {
+      setLoggingOut(false)
+    }
   }
   return (
     <DropdownMenu>
@@ -122,13 +149,13 @@ export function NavUser() {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           variant="destructive"
+          disabled={loggingOut}
           onClick={() => {
-            if (isMobile) setOpenMobile(false)
-            navigate("/login", { replace: true })
+            void signOut()
           }}
         >
           <LogOutIcon aria-hidden="true" />
-          退出登录
+          {loggingOut ? "正在退出…" : "退出登录"}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

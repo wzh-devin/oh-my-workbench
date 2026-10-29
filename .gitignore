@@ -29,6 +29,7 @@ yarn-error.log*
 pnpm-debug.log*
 
 # testing and tools
+*_test.go
 *.test.*
 *.spec.*
 test/
@@ -36,6 +37,8 @@ tests/
 __tests__/
 __mocks__/
 coverage/
+/apps/api/.bin/
+/apps/api/bin/
 .turbo/
 .code-review-graph/
 

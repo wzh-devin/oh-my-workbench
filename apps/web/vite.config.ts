@@ -11,6 +11,11 @@ export default defineConfig({
   server: {
     port: 3000,
     strictPort: true,
-    proxy: { "/api": "http://127.0.0.1:8787" },
+    proxy: {
+      "/api": {
+        target: process.env.API_PROXY_TARGET ?? "http://127.0.0.1:11990",
+        changeOrigin: false,
+      },
+    },
   },
 })

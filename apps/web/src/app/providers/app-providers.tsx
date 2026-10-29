@@ -3,6 +3,7 @@ import { Outlet } from "react-router"
 
 import { TopProgressBar } from "@/components/navigation/top-progress-bar"
 import { ThemeProvider } from "@/components/theme/theme-provider"
+import { AuthProvider } from "@/features/auth/auth-context"
 import { Toaster } from "@/components/ui/sonner"
 
 export function AppProviders() {
@@ -10,7 +11,9 @@ export function AppProviders() {
     <ThemeProvider>
       <MotionConfig reducedMotion="user">
         <TopProgressBar />
-        <Outlet />
+        <AuthProvider>
+          <Outlet />
+        </AuthProvider>
         <Toaster
           position="top-center"
           offset={{ top: 66 }}
