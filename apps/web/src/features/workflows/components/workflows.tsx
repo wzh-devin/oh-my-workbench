@@ -1,3 +1,4 @@
+import { TodoState } from "@/features/todos/components/todo-state"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router"
 import { useReducedMotion } from "motion/react"
@@ -317,11 +318,13 @@ export function Workflows() {
           </Button>
         }
       >
-        <div className="-m-4 flex min-h-0 min-w-0 flex-1">
-          <ReactFlowProvider>
-            <ResourceCanvas key={category} graph={graph} />
-          </ReactFlowProvider>
-        </div>
+        <TodoState>
+          <div className="-m-4 flex min-h-0 min-w-0 flex-1">
+            <ReactFlowProvider>
+              <ResourceCanvas key={category} graph={graph} />
+            </ReactFlowProvider>
+          </div>
+        </TodoState>
       </WorkbenchScreen>
     </>
   )

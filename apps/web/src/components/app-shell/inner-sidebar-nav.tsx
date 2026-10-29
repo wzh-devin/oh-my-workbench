@@ -69,7 +69,7 @@ export function InnerNavButton({
     <Button
       variant="ghost"
       size="sm"
-      aria-current={isActive ? "true" : undefined}
+      aria-current={isActive ? "location" : undefined}
       className={innerNavRowClassName(isActive, className)}
       {...props}
     >
@@ -114,10 +114,12 @@ export function InnerNavGroup({
   title,
   separated,
   children,
+  action,
 }: {
   title: string
   separated: boolean
   children: ReactNode
+  action?: ReactNode
 }) {
   const titleId = useId()
 
@@ -125,12 +127,12 @@ export function InnerNavGroup({
     <>
       {separated && <Separator className="my-2" />}
       <div role="group" aria-labelledby={titleId}>
-        <p
-          id={titleId}
-          className="px-3 pt-2 pb-1 text-xs font-medium text-muted-foreground"
-        >
-          {title}
-        </p>
+        <div className="flex items-center justify-between gap-2 px-3 pt-2 pb-1">
+          <p id={titleId} className="text-xs font-medium text-muted-foreground">
+            {title}
+          </p>
+          {action}
+        </div>
         <div className="flex flex-col gap-0.5 px-2">{children}</div>
       </div>
     </>
@@ -155,6 +157,7 @@ export function InnerSidebarNav({
           key={section.id}
           title={section.title}
           separated={sectionIdx > 0}
+          action={section.action}
         >
           {section.items.map((item) =>
             item.href ? (

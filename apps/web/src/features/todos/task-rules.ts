@@ -1,23 +1,8 @@
 import type { Todo, Workbench } from "@/features/workbench/model"
 import { todoSchema } from "@/features/workbench/model"
+import type { TodoPriority } from "./configuration"
 
 export const INBOX_ID = "list-inbox"
-export const PRIORITIES = [
-  { value: "1", label: "P1 紧急" },
-  { value: "2", label: "P2 高" },
-  { value: "3", label: "P3 普通" },
-  { value: "4", label: "无优先级" },
-]
-export const TASK_VIEWS = [
-  { id: "all", label: "全部待办" },
-  { id: "myday", label: "我的一天" },
-  { id: "today", label: "今天到期" },
-  { id: "overdue", label: "已逾期" },
-  { id: "upcoming", label: "未来计划" },
-  { id: "important", label: "重要" },
-  { id: "completed", label: "已完成" },
-]
-
 /** 日期仅按浏览器本地日历日比较，避免 UTC 转换造成跨日偏差。 */
 export const todayDate = (date = new Date()) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
@@ -27,18 +12,6 @@ export const offsetDate = (value: string, days: number) => {
   const date = new Date(`${value}T12:00:00`)
   date.setDate(date.getDate() + days)
   return todayDate(date)
-}
-
-export const inTaskView = (todo: Todo, view: string, today: string) => {
-  if (view === "completed") return todo.done
-  if (view === "all") return true
-  if (todo.done) return false
-  if (view === "myday") return todo.plannedFor === today
-  if (view === "today") return todo.dueDate === today
-  if (view === "overdue") return !!todo.dueDate && todo.dueDate < today
-  if (view === "upcoming") return !!todo.dueDate && todo.dueDate > today
-  if (view === "important") return todo.priority <= 2
-  return true
 }
 
 /** 完成父任务时一并完成步骤；重新打开保留已完成的步骤。 */
@@ -51,7 +24,11 @@ export const completeTask = (todo: Todo, done: boolean, at: string): Todo => ({
     : todo.steps,
 })
 
-export const sortTasks = (todos: Todo[], sort: string) =>
+export const sortTasks = (
+  todos: Todo[],
+  sort: string,
+  priorities?: TodoPriority[]
+) =>
   [...todos].sort((a, b) => {
     if (a.done !== b.done) return Number(a.done) - Number(b.done)
     if (a.done && b.done)
@@ -62,7 +39,9 @@ export const sortTasks = (todos: Todo[], sort: string) =>
     const due = (a.dueDate ?? "9999-12-31").localeCompare(
       b.dueDate ?? "9999-12-31"
     )
-    const priority = a.priority - b.priority
+    const order = (value: number) =>
+      priorities?.find((p) => p.value === value)?.position ?? value - 1
+    const priority = order(a.priority) - order(b.priority)
     const created = Date.parse(b.createdAt) - Date.parse(a.createdAt)
     return sort === "newest"
       ? created

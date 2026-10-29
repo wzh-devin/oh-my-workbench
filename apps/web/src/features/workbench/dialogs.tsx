@@ -1,6 +1,5 @@
 import { useId, useState, type FormEvent } from "react"
 import { toast } from "sonner"
-import { Alert, AlertDescription, AlertTitle } from "@/components/reui/alert"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +29,7 @@ import {
 } from "./model"
 import { updateWorkbench, useWorkbench } from "./store"
 
+/** false表示调用方已反馈失败；异常兜底通知，删除成功后才关闭。 */
 export function DeleteConfirm({
   open,
   onOpenChange,
@@ -41,22 +41,41 @@ export function DeleteConfirm({
   onOpenChange: (open: boolean) => void
   title: string
   description: string
-  onConfirm: () => boolean
+  onConfirm: () => boolean | Promise<boolean>
 }) {
+  const [pending, setPending] = useState(false)
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog
+      open={open}
+      onOpenChange={(value) => {
+        if (!pending) onOpenChange(value)
+      }}
+    >
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>取消</AlertDialogCancel>
+          <AlertDialogCancel disabled={pending}>取消</AlertDialogCancel>
           <AlertDialogAction
             type="button"
             variant="destructive"
-            onClick={() => {
-              if (onConfirm()) onOpenChange(false)
+            disabled={pending}
+            onClick={async (event) => {
+              event.preventDefault()
+              if (pending) return
+              setPending(true)
+              try {
+                if (await onConfirm()) {
+                  toast.success("已删除")
+                  onOpenChange(false)
+                }
+              } catch {
+                toast.error("删除失败，请重试。")
+              } finally {
+                setPending(false)
+              }
             }}
           >
             确认删除
@@ -91,7 +110,6 @@ export function ConnectionDialog({
   const [bucket, setBucket] = useState(
     source && "bucket" in source ? source.bucket : ""
   )
-  const [error, setError] = useState("")
   const { data } = useWorkbench()
   /** 配置校验与重复来源检查通过后，一次性更新来源及其首封示例邮件。 */
   const submit = (event: FormEvent) => {
@@ -109,7 +127,7 @@ export function ConnectionDialog({
             bucket: bucket.trim(),
           })
     if (!result.success) {
-      setError(result.error.issues[0]?.message ?? "请检查配置内容。")
+      toast.error(result.error.issues[0]?.message ?? "请检查配置内容。")
       return
     }
     const duplicate =
@@ -127,7 +145,7 @@ export function ConnectionDialog({
               record.bucket === bucket.trim()
           )
     if (duplicate) {
-      setError("这个来源已经存在，请直接使用已有连接。")
+      toast.error("这个来源已经存在，请直接使用已有连接。")
       return
     }
     const sourceId = source?.id ?? crypto.randomUUID()
@@ -202,7 +220,7 @@ export function ConnectionDialog({
     if (saved) {
       toast.success(source ? "名称已保存" : "连接已添加")
       onClose()
-    } else setError("保存失败，请检查本地存储后重试。")
+    }
   }
   return (
     <Dialog
@@ -218,7 +236,7 @@ export function ConnectionDialog({
             {kind === "mail" ? "邮箱" : "存储连接"}
           </DialogTitle>
         </DialogHeader>
-        <form onSubmit={submit} className="flex flex-col gap-4">
+        <form onSubmit={submit} noValidate className="flex flex-col gap-4">
           <Field>
             <FieldLabel htmlFor={`${id}-name`}>显示名称</FieldLabel>
             <Input
@@ -287,99 +305,11 @@ export function ConnectionDialog({
               </Field>
             </>
           )}
-          {error && (
-            <Alert variant="destructive">
-              <AlertTitle>配置未保存</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               取消
             </Button>
             <Button type="submit">{source ? "保存名称" : "添加连接"}</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-export function ListDialog({
-  source,
-  onClose,
-}: {
-  source?: { id: string; name: string }
-  onClose: () => void
-}) {
-  const id = useId()
-  const { data } = useWorkbench()
-  const [name, setName] = useState(source?.name ?? "")
-  const [error, setError] = useState("")
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    if (!name.trim()) {
-      setError("请输入清单名称。")
-      return
-    }
-    if (
-      data.todoLists.some(
-        (record) => record.name === name.trim() && record.id !== source?.id
-      )
-    ) {
-      setError("已有同名清单，请换一个名称。")
-      return
-    }
-    if (
-      updateWorkbench((current) => ({
-        ...current,
-        todoLists: source
-          ? current.todoLists.map((list) =>
-              list.id === source.id ? { ...list, name: name.trim() } : list
-            )
-          : [
-              ...current.todoLists,
-              { id: crypto.randomUUID(), name: name.trim() },
-            ],
-      }))
-    ) {
-      toast.success(source ? "清单已更新" : "清单已创建")
-      onClose()
-    } else setError("保存失败，请重试。")
-  }
-  return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose()
-      }}
-    >
-      <DialogContent aria-describedby={undefined}>
-        <DialogHeader>
-          <DialogTitle>{source ? "重命名清单" : "新建清单"}</DialogTitle>
-        </DialogHeader>
-        <form className="flex flex-col gap-4" onSubmit={submit}>
-          <Field>
-            <FieldLabel htmlFor={id}>清单名称</FieldLabel>
-            <Input
-              id={id}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              required
-              maxLength={100}
-              placeholder="阅读计划"
-            />
-          </Field>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              取消
-            </Button>
-            <Button type="submit">{source ? "保存清单" : "创建清单"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

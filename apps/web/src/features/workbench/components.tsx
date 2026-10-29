@@ -5,12 +5,6 @@ import { HeaderActions } from "@/components/app-shell/header-actions"
 import type { InnerNavSection } from "@/components/app-shell/data"
 import { InnerPanel } from "@/components/app-shell/inner-panel"
 import { InnerSidebarNav } from "@/components/app-shell/inner-sidebar-nav"
-import {
-  Alert,
-  AlertAction,
-  AlertDescription,
-  AlertTitle,
-} from "@/components/reui/alert"
 import { Badge } from "@/components/reui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
@@ -111,9 +105,9 @@ export function EmptyState({
   )
 }
 
-/** 在实际页面区域内展示加载与可恢复错误，读取失败时不展示伪造的零值。 */
+/** 保留加载骨架与恢复入口，错误由store通知，不覆盖已加载的内容。 */
 export function WorkbenchState({ children }: { children: ReactNode }) {
-  const { status, error } = useWorkbench()
+  const { status } = useWorkbench()
   if (status === "loading")
     return (
       <div
@@ -135,43 +129,12 @@ export function WorkbenchState({ children }: { children: ReactNode }) {
     )
   if (status === "error")
     return (
-      <Alert variant="destructive">
-        <AlertTitle>工作台数据暂时不可用</AlertTitle>
-        <AlertDescription>{error}</AlertDescription>
-        <AlertAction>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={loadWorkbench}
-          >
-            <RefreshCwIcon aria-hidden="true" />
-            重试
-          </Button>
-        </AlertAction>
-      </Alert>
+      <Button type="button" variant="outline" size="sm" onClick={loadWorkbench}>
+        <RefreshCwIcon aria-hidden="true" />
+        重新加载工作台
+      </Button>
     )
-  return (
-    <>
-      {error && (
-        <Alert variant="destructive">
-          <AlertTitle>修改尚未保存</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-          <AlertAction>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={loadWorkbench}
-            >
-              重试
-            </Button>
-          </AlertAction>
-        </Alert>
-      )}
-      {children}
-    </>
-  )
+  return children
 }
 
 /** 延续原页面的全宽主体与顶栏操作，页面标题交给既有面包屑。 */
@@ -223,7 +186,7 @@ export function Choice({
       items={options}
       disabled={disabled}
     >
-      <SelectTrigger size="sm" aria-label={label} className="w-full">
+      <SelectTrigger size="default" aria-label={label} className="w-full">
         <SelectValue placeholder={label} />
       </SelectTrigger>
       <SelectContent>

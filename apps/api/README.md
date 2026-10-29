@@ -8,6 +8,8 @@
 go run ./cmd/server
 ```
 
+此命令不监视文件变化。修改 Go 代码或迁移后，需停止并重新启动 API；根目录的 `pnpm dev` 也不会自动重启 Go 进程。Vite 的前端热更新不代表后端已更新，联调时应确认实际 API 进程已加载当前代码，并从页面验证保存与刷新。
+
 只有一个 `cmd/server` 入口。启动时复用现有数据库连接池执行 Goose 迁移，成功后连接 Redis 并启动 Gin；失败则退出。直接运行构建后的二进制执行相同流程。
 
 ```text
@@ -70,7 +72,8 @@ internal/
   app/                      启动编排、依赖组装、总路由
   config/                   应用配置
   modules/
-    auth/                   认证业务：handler、service、repository、model、dto、errors
+    auth/                   认证：routes、handler、service、repository、model、dto、errors
+    todos/                  待办：清单、步骤、日期、标签、来源和旧数据导入
   platform/
     database/               PostgreSQL 连接
     cache/                  Redis 连接
@@ -93,3 +96,42 @@ migrations/
 `HTTP_ADDR` 默认 `localhost:11990`；`COOKIE_SECURE` 默认 true。HTTP 本地开发需明确设置 `COOKIE_SECURE=false`，HTTPS 生产部署设置 true。初次部署应先限制入口并完成管理员配置，再对外开放。Go 仅提供 API，前端静态文件和 SPA fallback 由部署的 Web 服务器提供。
 
 认证集成测试额外要求 `TEST_REDIS_ADDR`。测试创建独立 PostgreSQL schema，清空指定 Redis 的 database 15，必须使用隔离测试服务；未提供两个测试变量时跳过认证集成测试。
+
+## 模块路由与数据库边界
+
+`app/router.go` 只创建 Gin、安装公共中间件、组装依赖并挂载模块。具体接口放在模块的 `routes.go`，通过 `Handler.RegisterRoutes(*gin.RouterGroup)` 注册；Todo 挂载到带会话校验的 `/api/todos` 分组。
+
+Handler 负责 HTTP 协议；Service 负责业务校验和流程编排；所有 SQL/GORM 及 Redis 读写必须放在 Repository 文件。事务和用户行锁由 Repository 提供，Service 在事务内调用仓储方法。禁止在 Service 中声明 Repository 方法来绕过文件边界。
+
+## Todo
+
+所有接口需要当前登录会话；用户身份只取服务端会话，不能通过请求指定。复用 `code/message/data` 信封，业务 ID 均为字符串；日期为 `YYYY-MM-DD`，时间为 RFC3339。
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| GET | `/api/todos` | 当前用户的清单、待办（含步骤）、视图和优先级一致性快照 |
+| POST | `/api/todos/lists` | 创建清单，提交 `name` |
+| PATCH | `/api/todos/lists/:id` | 重命名清单，提交 `name` |
+| DELETE | `/api/todos/lists/:id` | 清单内待办移入收集箱，保留步骤 |
+| POST | `/api/todos/tasks` | 创建待办，至少提交 `title` |
+| PATCH | `/api/todos/tasks/:id` | 提交 `version` 和要修改的字段 |
+| DELETE | `/api/todos/tasks/:id` | 提交 `version`，同时删除步骤 |
+| POST | `/api/todos/import` | 导入旧 `{todoLists,todos}` 存档，按旧 ID 幂等处理 |
+| POST | `/api/todos/views` | 创建视图，提交名称、图标、规则、关键词和排序 |
+| PATCH | `/api/todos/views/:id` | 更新完整视图配置，同时提交 `version` |
+| DELETE | `/api/todos/views/:id` | 提交 `version`，至少保留一个活动视图 |
+| PUT | `/api/todos/priorities` | 按数组顺序批量保存四档名称、HEX 颜色及版本 |
+
+收集箱是 `listId: null`，不创建默认清单记录。任务支持 `title`、`note`、`listId`、`done`、`priority`、`dueDate`、`plannedFor`、`tags`、`steps`；创建时可提供 `source: {kind:"mail",id,label}`，同一用户重复转同一来源返回原待办。PATCH 可用 null 清空日期或移入收集箱，省略字段保持原值。来源创建后不可修改。
+
+步骤随父任务保存；已有步骤携带字符串 `id`，新增步骤省略 `id`，服务端分配 ID。完成任务同时完成步骤，重新打开保留步骤状态。任务写入和清单移动增加版本；陈旧版本返回 409，不覆盖后续修改。不存在或属于其他用户的记录均返回 404。
+
+前端显式点击“导入本地待办”后才导入实际存档；导入成功或失败都保留浏览器原始备份，不自动上传内置样例。已导入记录不覆盖远端编辑。业务数据使用 PostgreSQL，Redis 仅继续承担认证会话与登录限流。
+
+快照增加 `todoViews`、`todoPriorities`。首次初始化持久化“全部待办、我的一天、已逾期、已完成”，预置视图可以删除，删除记录不重新预置；删除视图不修改任务。所有配置写入在当前用户行锁事务中校验归属、版本和剩余视图数量。
+
+视图配置包含 `name`、Lucide 图标标识 `icon`、通用规则文档 `filterQuery`、`searchText`、`sort`（`due/priority/newest`）。规则使用 `schemaVersion:1` 与 `root`，仅包含 `constant/all/any/not/condition` 五种节点，由独立的 `internal/shared/rules` 编译检查。Todo 限定状态、清单、优先级、标签、计划日期、截止日期六个字段；日期上下文使用浏览器本地的 `today/yesterday/tomorrow`。每用户最多 100 个活动视图，每条规则最多 32KiB、8 层、256 节点。
+
+优先级提交 `{priorities:[{value,name,color,version},...]}`，必须包含稳定 `value=1..4` 各一次，数组下标为排序。名称各不相同、最多 24 字；颜色为不透明 `#RRGGBB`，返回时规范为小写，读取兼容既有颜色标识。修改名称、颜色和顺序不重写任务与规则引用。旧版本或任意一行失败时整批回滚。
+
+首版按个人工作台规模批量读取完整快照；任务达到万级或响应超出预算时需升级服务端分页。两次增量迁移分别创建任务三表和配置两表，不修改旧表；回滚代码时保留已写入业务表。

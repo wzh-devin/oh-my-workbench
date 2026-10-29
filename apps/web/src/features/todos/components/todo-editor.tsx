@@ -20,14 +20,14 @@ import { Separator } from "@/components/ui/separator"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Choice } from "@/features/workbench/components"
 import { todoSchema, formatTime, type Todo } from "@/features/workbench/model"
-import { updateWorkbench, useWorkbench } from "@/features/workbench/store"
+import { useWorkbench } from "@/features/workbench/store"
 import {
   SHEET_SHELL,
   SHEET_FOOTER,
 } from "@/features/settings/components/sections/sheet-parts"
-import { completeTask, PRIORITIES } from "../task-rules"
-import { useToday } from "../use-today"
+import { createTodo, updateTodo, useTodos } from "../store"
 import { TodoDatePicker } from "./todo-date-picker"
+import { PrioritySelect } from "./priority-select"
 
 /** 详情沿用现有浮动 Sheet，提交前验证整个草稿，失败不关闭或丢弃输入。 */
 export function TodoEditor({
@@ -35,18 +35,24 @@ export function TodoEditor({
   listId,
   defaults,
   onClose,
+  onReload,
 }: {
   todo?: Todo
   listId: string
   defaults?: Partial<Todo>
+  onReload: () => void
   onClose: () => void
 }) {
   const id = useId()
+  // 后台刷新不能为尚未重载的草稿换用新版本号。
+  const [editingTodo] = useState(todo)
   const { data } = useWorkbench()
-  const today = useToday()
+  const { busyIds } = useTodos()
+  const pending =
+    busyIds.includes("import") || busyIds.includes(todo?.id ?? "task:create")
   const [title, setTitle] = useState(todo?.title ?? "")
   const [note, setNote] = useState(todo?.note ?? "")
-  const [list, setList] = useState(todo?.listId ?? listId)
+  const [list, setList] = useState(todo?.listId ?? defaults?.listId ?? listId)
   const [due, setDue] = useState(
     todo ? (todo.dueDate ?? "") : (defaults?.dueDate ?? "")
   )
@@ -60,7 +66,6 @@ export function TodoEditor({
   const [steps, setSteps] = useState(todo?.steps ?? [])
   const [stepTitle, setStepTitle] = useState("")
   const [done, setDone] = useState(todo?.done ?? false)
-  const [error, setError] = useState("")
   const labels = [
     ...new Set(
       tags
@@ -77,18 +82,19 @@ export function TodoEditor({
     ])
     setStepTitle("")
   }
-  const submit = (event: FormEvent) => {
+  /** 校验完整草稿后提交服务端，等待期间冻结字段以避免后续输入被关闭操作丢弃。 */
+  const submit = async (event: FormEvent) => {
     event.preventDefault()
     if (!data.todoLists.some((record) => record.id === list)) {
-      setError("请选择有效的清单。")
+      toast.error("请选择有效的清单。")
       return
     }
     if (stepTitle.trim()) {
-      setError("请先添加或清空正在输入的步骤。")
+      toast.error("请先添加或清空正在输入的步骤。")
       return
     }
     const parsed = todoSchema.safeParse({
-      ...(todo ?? {
+      ...(editingTodo ?? {
         id: crypto.randomUUID(),
         done: false,
         createdAt: new Date().toISOString(),
@@ -103,27 +109,34 @@ export function TodoEditor({
       steps,
     })
     if (!parsed.success) {
-      setError(parsed.error.issues[0].message)
+      toast.error(parsed.error.issues[0].message)
       return
     }
-    const record = completeTask(parsed.data, done, new Date().toISOString())
+    const changes = {
+      title: parsed.data.title,
+      note: parsed.data.note,
+      listId: parsed.data.listId,
+      dueDate: parsed.data.dueDate,
+      plannedFor: parsed.data.plannedFor,
+      priority: parsed.data.priority,
+      tags: parsed.data.tags,
+      steps: parsed.data.steps,
+      done,
+    }
     if (
-      updateWorkbench((current) => ({
-        ...current,
-        todos: todo
-          ? current.todos.map((item) => (item.id === todo.id ? record : item))
-          : [record, ...current.todos],
-      }))
+      editingTodo
+        ? await updateTodo(editingTodo, changes)
+        : await createTodo(changes)
     ) {
-      toast.success(todo ? "待办已更新" : "待办已添加")
+      if (!todo) toast.success("待办已添加")
       onClose()
-    } else setError("保存失败，请重试。")
+    }
   }
   return (
     <Sheet
       open
       onOpenChange={(open) => {
-        if (!open) onClose()
+        if (!open && !pending) onClose()
       }}
     >
       <SheetContent
@@ -150,13 +163,21 @@ export function TodoEditor({
             size="icon-sm"
             aria-label="关闭待办详情"
             onClick={onClose}
+            disabled={pending}
           >
             <XIcon aria-hidden="true" />
           </Button>
         </div>
-        <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
+        <form
+          className="flex min-h-0 flex-1 flex-col"
+          onSubmit={submit}
+          noValidate
+        >
           <ScrollArea className="min-h-0 flex-1">
-            <div className="flex flex-col gap-6 px-5 py-5">
+            <fieldset
+              disabled={pending}
+              className="flex flex-col gap-6 px-5 py-5"
+            >
               <Field>
                 <FieldLabel htmlFor={`${id}-title`}>待办内容</FieldLabel>
                 <Input
@@ -173,16 +194,6 @@ export function TodoEditor({
                 <label className="flex items-center gap-2 text-sm">
                   <Checkbox checked={done} onCheckedChange={setDone} />
                   标记已完成
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <Checkbox
-                    checked={!!today && planned === today}
-                    disabled={!today}
-                    onCheckedChange={(checked) =>
-                      setPlanned(checked ? today : null)
-                    }
-                  />
-                  加入我的一天
                 </label>
               </div>
               <Separator />
@@ -214,18 +225,29 @@ export function TodoEditor({
                   value={due}
                   onChange={setDue}
                 />
+                <FieldLabel
+                  htmlFor={`${id}-planned`}
+                  className="text-muted-foreground"
+                >
+                  <CalendarIcon className="size-4" aria-hidden="true" />
+                  计划日期
+                </FieldLabel>
+                <TodoDatePicker
+                  id={`${id}-planned`}
+                  label="计划日期"
+                  value={planned ?? ""}
+                  onChange={(value) => setPlanned(value || null)}
+                />
                 <FieldLabel className="text-muted-foreground">
                   <FlagIcon className="size-4" aria-hidden="true" />
                   优先级
                 </FieldLabel>
-                <div className="min-w-0">
-                  <Choice
-                    value={priority}
-                    onChange={setPriority}
-                    options={PRIORITIES}
-                    label="优先级"
-                  />
-                </div>
+                <PrioritySelect
+                  value={priority}
+                  onChange={setPriority}
+                  priorities={data.todoPriorities}
+                  disabled={pending}
+                />
               </div>
               <Separator />
               <div className="flex flex-col gap-3">
@@ -344,18 +366,36 @@ export function TodoEditor({
                   查看原邮件
                 </Button>
               )}
-              {error && (
-                <p role="alert" className="text-sm text-destructive">
-                  {error}
-                </p>
-              )}
-            </div>
+            </fieldset>
           </ScrollArea>
           <div className={SHEET_FOOTER}>
-            <Button type="button" variant="outline" onClick={onClose}>
+            {todo &&
+              data.todos.some(
+                (latest) =>
+                  latest.id === todo.id &&
+                  latest.version !== editingTodo?.version
+              ) && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={onReload}
+                  disabled={pending}
+                >
+                  重新载入
+                </Button>
+              )}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={pending}
+            >
               取消
             </Button>
-            <Button type="submit">保存待办</Button>
+            <Button type="submit" disabled={pending}>
+              保存待办
+            </Button>
           </div>
         </form>
       </SheetContent>

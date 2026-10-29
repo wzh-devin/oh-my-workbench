@@ -3,6 +3,7 @@ import { Outlet } from "react-router"
 
 import { TopProgressBar } from "@/components/navigation/top-progress-bar"
 import { ThemeProvider } from "@/components/theme/theme-provider"
+import { TodoSession } from "@/features/todos/session"
 import { AuthProvider } from "@/features/auth/auth-context"
 import { Toaster } from "@/components/ui/sonner"
 
@@ -12,6 +13,7 @@ export function AppProviders() {
       <MotionConfig reducedMotion="user">
         <TopProgressBar />
         <AuthProvider>
+          <TodoSession />
           <Outlet />
         </AuthProvider>
         <Toaster

@@ -1,16 +1,15 @@
-import { useMemo, useState, type FormEvent } from "react"
+import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { Link, useSearchParams } from "react-router"
 import {
   CalendarDaysIcon,
-  CheckCheckIcon,
-  FlagIcon,
   InboxIcon,
   ListTodoIcon,
   PencilIcon,
   PlusIcon,
-  SunIcon,
   Trash2Icon,
   MoreHorizontalIcon,
+  Settings2Icon,
+  ListChecksIcon,
 } from "lucide-react"
 import type { ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
@@ -18,7 +17,6 @@ import type { DataGridFeatures } from "@/components/reui/data-grid/data-grid"
 import { Badge } from "@/components/reui/badge"
 import { Filters } from "@/components/reui/filters/filters"
 import { createFilterQuery } from "@/components/reui/filters/filters-query"
-import type { FilterField } from "@/components/reui/filters/filters-types"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -26,6 +24,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -34,106 +33,137 @@ import {
   WorkbenchNavigation,
   WorkbenchScreen,
 } from "@/features/workbench/components"
-import { DeleteConfirm, ListDialog } from "@/features/workbench/dialogs"
-import { EQUALITY_OPERATORS, matchesQuery } from "@/features/workbench/filters"
+import { DeleteConfirm } from "@/features/workbench/dialogs"
 import { type Todo } from "@/features/workbench/model"
 import { RecordHint, RecordsGrid } from "@/features/workbench/records-grid"
-import { updateWorkbench, useWorkbench } from "@/features/workbench/store"
-import {
-  completeTask,
-  INBOX_ID,
-  inTaskView,
-  newTask,
-  offsetDate,
-  PRIORITIES,
-  removeList,
-  sortTasks,
-  TASK_VIEWS,
-} from "../task-rules"
+import { useWorkbench } from "@/features/workbench/store"
+import { INBOX_ID, newTask, sortTasks } from "../task-rules"
 import { useToday } from "../use-today"
+import {
+  createTodo,
+  updateTodo,
+  deleteTodo,
+  deleteTodoList,
+  deleteTodoView,
+  useTodos,
+} from "../store"
+import { TodoState } from "./todo-state"
+import { TodoImport } from "./todo-import"
+import { ListDialog } from "./list-dialog"
 import { TodoEditor } from "./todo-editor"
+import { ViewDialog, todoRuleFields } from "./view-dialog"
+import { TODO_FILTER_LABELS } from "../filter-labels"
+import { ViewIcon } from "./view-icons"
+import { PriorityBadge, PriorityDialog } from "./priority-dialog"
+import { TodoDatePicker } from "./todo-date-picker"
+import {
+  compileTodoViews,
+  compileTodoRule,
+  queryToRule,
+  taskSearchText,
+  viewTaskDefaults,
+} from "../view-rules"
+import type { TodoView } from "../configuration"
 
 /** 智能视图只派生任务；清单、日期计划和截止日期保持各自含义。 */
 export function Todos() {
   const { data } = useWorkbench()
+  const { busyIds, status } = useTodos()
+  const [editorRevision, setEditorRevision] = useState(0)
   const today = useToday()
   const [params, setParams] = useSearchParams()
   const listId = params.get("list")
-  const view = TASK_VIEWS.some((item) => item.id === params.get("view"))
-    ? params.get("view")!
-    : "all"
+  const compiledViews = useMemo(
+    () =>
+      compileTodoViews(
+        data.todoViews,
+        data.todoLists.map((list) => list.id),
+        today
+      ),
+    [data.todoViews, data.todoLists, today]
+  )
+  const selectedView =
+    compiledViews.find(
+      (entry) =>
+        entry.view.id === params.get("view") ||
+        entry.view.builtinKey === params.get("view")
+    ) ?? compiledViews[0]
+  const currentView = selectedView?.view
+  const [editingView, setEditingView] = useState<TodoView | "new" | null>(null)
+  const [prioritiesOpen, setPrioritiesOpen] = useState(false)
   const [search, setSearch] = useState("")
-  const [sort, setSort] = useState("due")
+  const [sort, setSort] = useState<string | null>(null)
   const [query, setQuery] = useState(() => createFilterQuery())
   const [editing, setEditing] = useState<Todo | "new" | null>(null)
   const [editingList, setEditingList] = useState<
     { id: string; name: string } | "new" | null
   >(null)
-  const [deleting, setDeleting] = useState<Todo | "list" | null>(null)
+  const [deleting, setDeleting] = useState<Todo | "list" | "view" | null>(null)
   const [quickTitle, setQuickTitle] = useState("")
-  const [quickError, setQuickError] = useState("")
   const currentList = data.todoLists.find((list) => list.id === listId)
   const target =
     editing ?? data.todos.find((todo) => todo.id === params.get("task")) ?? null
   const title = listId
     ? (currentList?.name ?? "清单不存在")
-    : TASK_VIEWS.find((item) => item.id === view)!.label
-  const tags = [...new Set(data.todos.flatMap((todo) => todo.tags))].sort()
-  const fields: FilterField[] = [
-    {
-      id: "status",
-      label: "完成状态",
-      type: "select",
-      operators: EQUALITY_OPERATORS,
-      options: [
-        { value: "pending", label: "未完成" },
-        { value: "done", label: "已完成" },
-      ],
-    },
-    {
-      id: "priority",
-      label: "优先级",
-      type: "select",
-      operators: EQUALITY_OPERATORS,
-      options: PRIORITIES,
-    },
-    {
-      id: "tags",
-      label: "标签",
-      type: "select",
-      operators: EQUALITY_OPERATORS,
-      options: tags.map((tag) => ({ value: tag, label: tag })),
-    },
-  ]
-  const defaults: Partial<Todo> = listId
-    ? {}
-    : view === "myday"
-      ? { plannedFor: today || null }
-      : view === "today"
-        ? { dueDate: today || null }
-        : view === "important"
-          ? { priority: 2 }
-          : view === "upcoming"
-            ? { dueDate: today ? offsetDate(today, 1) : null }
-            : {}
+    : (currentView?.name ?? "待办")
+  const fields = todoRuleFields(data.todoLists, data.todoPriorities)
+  const defaults = listId ? {} : viewTaskDefaults(currentView, today)
+  const temporaryRule = useMemo(() => {
+    try {
+      return { match: compileTodoRule(queryToRule(query), today), error: null }
+    } catch (error) {
+      return {
+        match: () => false,
+        error: error instanceof Error ? error.message : "筛选条件不正确",
+      }
+    }
+  }, [query, today])
+  const viewError = !listId ? selectedView?.error : undefined
+  useEffect(() => {
+    if (!viewError || !currentView) return
+    toast.error(viewError, {
+      id: "todo-view-rule",
+      action: { label: "编辑视图", onClick: () => setEditingView(currentView) },
+    })
+    return () => {
+      toast.dismiss("todo-view-rule")
+    }
+  }, [viewError, currentView])
+  useEffect(() => {
+    if (!temporaryRule.error) return
+    toast.error(temporaryRule.error, {
+      id: "todo-filter-rule",
+      action: {
+        label: "清除筛选",
+        onClick: () => setQuery(createFilterQuery()),
+      },
+    })
+    return () => {
+      toast.dismiss("todo-filter-rule")
+    }
+  }, [temporaryRule.error])
   const records = useMemo(
     () =>
       sortTasks(
         data.todos.filter(
           (todo) =>
-            (listId ? todo.listId === listId : inTaskView(todo, view, today)) &&
-            `${todo.title} ${todo.note} ${todo.tags.join(" ")} ${todo.steps.map((step) => step.title).join(" ")}`
-              .toLowerCase()
-              .includes(search.toLowerCase()) &&
-            matchesQuery(query, {
-              status: todo.done ? "done" : "pending",
-              priority: String(todo.priority),
-              tags: todo.tags,
-            })
+            (listId ? todo.listId === listId : selectedView?.match(todo)) &&
+            taskSearchText(todo).includes(search.toLowerCase()) &&
+            temporaryRule.match(todo)
         ),
-        sort
+        sort ?? currentView?.sort ?? "due",
+        data.todoPriorities
       ),
-    [data.todos, listId, view, today, search, query, sort]
+    [
+      data.todos,
+      data.todoPriorities,
+      listId,
+      selectedView,
+      search,
+      temporaryRule,
+      sort,
+      currentView?.sort,
+    ]
   )
   const clearFilters = () => {
     setSearch("")
@@ -148,15 +178,13 @@ export function Todos() {
   const changeNavigation = (id: string) => {
     setSearch("")
     setQuery(createFilterQuery())
+    setSort(null)
     setParams(
-      TASK_VIEWS.some((item) => item.id === id)
-        ? id === "all"
-          ? {}
-          : { view: id }
-        : { list: id }
+      id.startsWith("view:") ? { view: id.slice(5) } : { list: id.slice(5) }
     )
   }
-  const quickAdd = (event: FormEvent) => {
+  /** 快捷录入也经过服务端保存，成功后才清空输入和筛选。 */
+  const quickAdd = async (event: FormEvent) => {
     event.preventDefault()
     try {
       const task = newTask(
@@ -164,52 +192,23 @@ export function Todos() {
         currentList?.id ?? INBOX_ID,
         defaults
       )
-      if (
-        !updateWorkbench((current) => ({
-          ...current,
-          todos: [task, ...current.todos],
-        }))
-      ) {
-        setQuickError("添加失败，请重试。")
-        return
-      }
+      const saved = await createTodo({
+        title: task.title,
+        listId: task.listId,
+        ...defaults,
+      })
+      if (!saved) return
       setQuickTitle("")
-      setQuickError("")
       setSearch("")
       setQuery(createFilterQuery())
-      if (["completed", "overdue"].includes(view) && !listId)
-        setParams({ list: INBOX_ID })
+      if (!listId && !selectedView?.match(saved))
+        setParams({ list: saved.listId })
       toast.success("待办已添加")
     } catch {
-      setQuickError("请输入 1～200 字的待办内容。")
+      toast.error("请输入 1～200 字的待办内容。")
     }
   }
   const columns: ColumnDef<DataGridFeatures, Todo>[] = [
-    {
-      id: "done",
-      header: "完成",
-      size: 52,
-      enableResizing: false,
-      meta: { headerClassName: "text-center", cellClassName: "text-center" },
-      cell: ({ row }) => (
-        <div className="flex justify-center">
-          <Checkbox
-            aria-label={`${row.original.done ? "取消完成" : "完成"}：${row.original.title}`}
-            checked={row.original.done}
-            onCheckedChange={(done) =>
-              updateWorkbench((current) => ({
-                ...current,
-                todos: current.todos.map((todo) =>
-                  todo.id === row.original.id
-                    ? completeTask(todo, done, new Date().toISOString())
-                    : todo
-                ),
-              }))
-            }
-          />
-        </div>
-      ),
-    },
     {
       accessorKey: "title",
       header: "待办内容",
@@ -217,46 +216,40 @@ export function Todos() {
       enableResizing: false,
       meta: { fillWidth: true },
       cell: ({ row }) => (
-        <div className="flex min-w-0 items-center gap-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <Checkbox
+            aria-label={`${row.original.done ? "取消完成" : "完成"}：${row.original.title}`}
+            checked={row.original.done}
+            disabled={busyIds.includes(row.original.id)}
+            onCheckedChange={(done) => void updateTodo(row.original, { done })}
+          />
           <Link
             to={`?${new URLSearchParams({ ...Object.fromEntries(params), task: row.original.id })}`}
             className={`min-w-0 truncate text-sm font-normal underline-offset-4 outline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring ${row.original.done ? "text-muted-foreground line-through" : "text-foreground"}`}
           >
             {row.original.title}
           </Link>
-          {row.original.note.trim() && (
-            <RecordHint label={`查看备注：${row.original.title}`}>
-              {row.original.note}
+          {row.original.steps.length > 0 && (
+            <span
+              className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground tabular-nums"
+              aria-label={`步骤：${row.original.steps.filter((step) => step.done).length}/${row.original.steps.length}`}
+            >
+              <ListChecksIcon className="size-3.5" aria-hidden="true" />
+              {row.original.steps.filter((step) => step.done).length}/
+              {row.original.steps.length}
+            </span>
+          )}
+          {(row.original.note.trim() || row.original.tags.length > 0) && (
+            <RecordHint label={`查看待办信息：${row.original.title}`}>
+              <span className="flex flex-col gap-2">
+                {row.original.note.trim() && <span>{row.original.note}</span>}
+                {row.original.tags.length > 0 && (
+                  <span>标签：{row.original.tags.join("、")}</span>
+                )}
+              </span>
             </RecordHint>
           )}
         </div>
-      ),
-    },
-    {
-      id: "tags",
-      header: "标签",
-      size: 120,
-      enableResizing: false,
-      cell: ({ row }) => (
-        <span
-          className="block truncate text-sm text-muted-foreground"
-          title={row.original.tags.join("、")}
-        >
-          {row.original.tags.join("、") || "—"}
-        </span>
-      ),
-    },
-    {
-      id: "steps",
-      header: "步骤",
-      size: 120,
-      enableResizing: false,
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground tabular-nums">
-          {row.original.steps.length > 0
-            ? `${row.original.steps.filter((step) => step.done).length}/${row.original.steps.length}`
-            : "—"}
-        </span>
       ),
     },
     {
@@ -264,28 +257,13 @@ export function Todos() {
       header: "优先级",
       size: 120,
       enableResizing: false,
-      cell: ({ row }) =>
-        row.original.priority === 4 ? (
-          <span className="text-sm text-muted-foreground">—</span>
-        ) : (
-          <Badge
-            variant={
-              row.original.priority === 1
-                ? "destructive-light"
-                : row.original.priority === 2
-                  ? "warning-light"
-                  : row.original.priority === 3
-                    ? "primary-light"
-                    : "secondary"
-            }
-          >
-            {
-              PRIORITIES.find(
-                (option) => option.value === String(row.original.priority)
-              )?.label
-            }
-          </Badge>
-        ),
+      cell: ({ row }) => (
+        <PriorityBadge
+          priority={data.todoPriorities.find(
+            (p) => p.value === row.original.priority
+          )}
+        />
+      ),
     },
     {
       accessorKey: "dueDate",
@@ -340,29 +318,16 @@ export function Todos() {
       meta: { headerClassName: "text-center" },
       cell: ({ row }) => (
         <div className="flex items-center justify-center gap-1">
-          <Button
-            type="button"
-            size="icon-sm"
-            variant={row.original.plannedFor === today ? "secondary" : "ghost"}
-            aria-label={`${row.original.plannedFor === today ? "移出" : "加入"}我的一天：${row.original.title}`}
-            aria-pressed={row.original.plannedFor === today}
-            disabled={row.original.done || !today}
-            onClick={() =>
-              updateWorkbench((current) => ({
-                ...current,
-                todos: current.todos.map((todo) =>
-                  todo.id === row.original.id
-                    ? {
-                        ...todo,
-                        plannedFor: todo.plannedFor === today ? null : today,
-                      }
-                    : todo
-                ),
-              }))
+          <TodoDatePicker
+            id={`planned-${row.original.id}`}
+            value={row.original.plannedFor ?? ""}
+            label={`计划日期：${row.original.title}`}
+            compact
+            disabled={busyIds.includes(row.original.id)}
+            onChange={(value) =>
+              void updateTodo(row.original, { plannedFor: value || null })
             }
-          >
-            <SunIcon aria-hidden="true" />
-          </Button>
+          />
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
@@ -398,36 +363,49 @@ export function Todos() {
     <>
       <WorkbenchNavigation
         title="待办清单"
-        activeItem={listId ?? view}
+        activeItem={listId ? `list:${listId}` : `view:${currentView?.id ?? ""}`}
         onItemChange={changeNavigation}
         sections={[
           {
             id: "views",
             title: "智能视图",
-            items: TASK_VIEWS.map((item) => ({
-              ...item,
-              icon:
-                item.id === "myday" ? (
-                  <SunIcon aria-hidden="true" />
-                ) : item.id === "important" ? (
-                  <FlagIcon aria-hidden="true" />
-                ) : item.id === "completed" ? (
-                  <CheckCheckIcon aria-hidden="true" />
-                ) : (
-                  <ListTodoIcon aria-hidden="true" />
-                ),
-              badge: data.todos.filter(
-                (todo) =>
-                  inTaskView(todo, item.id, today) &&
-                  (item.id === "completed" || !todo.done)
-              ).length,
+            action: (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label="新建视图"
+                disabled={status !== "ready"}
+                onClick={() => setEditingView("new")}
+              >
+                <PlusIcon aria-hidden="true" />
+              </Button>
+            ),
+            items: compiledViews.map(({ view, match, error }) => ({
+              id: `view:${view.id}`,
+              label: view.name,
+              icon: <ViewIcon name={view.icon} />,
+              ...(error ? {} : { badge: data.todos.filter(match).length }),
             })),
           },
           {
             id: "lists",
             title: "清单",
+            action: (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label="新建清单"
+                title="新建清单"
+                disabled={status !== "ready"}
+                onClick={() => setEditingList("new")}
+              >
+                <PlusIcon aria-hidden="true" />
+              </Button>
+            ),
             items: data.todoLists.map((list) => ({
-              id: list.id,
+              id: `list:${list.id}`,
               label: list.name,
               icon:
                 list.id === INBOX_ID ? (
@@ -446,125 +424,170 @@ export function Todos() {
         title={title}
         actions={
           <>
-            {currentList && currentList.id !== INBOX_ID && (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon-sm"
-                      aria-label="清单操作"
-                    />
-                  }
-                >
-                  <MoreHorizontalIcon aria-hidden="true" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setEditingList(currentList)}>
-                    <PencilIcon aria-hidden="true" />
-                    重命名清单
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onClick={() => setDeleting("list")}
-                  >
-                    <Trash2Icon aria-hidden="true" />
-                    删除清单
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label="更多待办操作"
+                    title="更多操作"
+                    disabled={status !== "ready"}
+                  />
+                }
+              >
+                <MoreHorizontalIcon aria-hidden="true" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {!listId && currentView && (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() => setEditingView(currentView)}
+                    >
+                      <PencilIcon aria-hidden="true" />
+                      编辑视图
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      disabled={data.todoViews.length <= 1}
+                      onClick={() => setDeleting("view")}
+                    >
+                      <Trash2Icon aria-hidden="true" />
+                      {data.todoViews.length <= 1
+                        ? "至少保留一个视图"
+                        : "删除视图"}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                {currentList && currentList.id !== INBOX_ID && (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() => setEditingList(currentList)}
+                    >
+                      <PencilIcon aria-hidden="true" />
+                      重命名清单
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onClick={() => setDeleting("list")}
+                    >
+                      <Trash2Icon aria-hidden="true" />
+                      删除清单
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                <DropdownMenuItem onClick={() => setPrioritiesOpen(true)}>
+                  <Settings2Icon aria-hidden="true" />
+                  管理优先级
+                </DropdownMenuItem>
+                <TodoImport />
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               type="button"
               size="sm"
-              variant="outline"
-              onClick={() => setEditingList("new")}
+              onClick={() => setEditing("new")}
+              disabled={status !== "ready"}
             >
-              新建清单
-            </Button>
-            <Button type="button" size="sm" onClick={() => setEditing("new")}>
               <PlusIcon aria-hidden="true" />
               新增待办
             </Button>
           </>
         }
       >
-        <form className="flex items-center gap-2" onSubmit={quickAdd}>
-          <Input
-            aria-label="快速添加待办"
-            placeholder="添加待办…"
-            value={quickTitle}
-            maxLength={200}
-            onChange={(event) => setQuickTitle(event.target.value)}
-          />
-          <Button type="submit" size="sm" disabled={!quickTitle.trim()}>
-            <PlusIcon aria-hidden="true" />
-            添加
-          </Button>
-        </form>
-        {quickError && (
-          <p role="alert" className="text-sm text-destructive">
-            {quickError}
-          </p>
-        )}
-        <RecordsGrid
-          title={title}
-          icon={<ListTodoIcon className="size-4" aria-hidden="true" />}
-          records={records}
-          columns={columns}
-          toolbar={
-            <>
-              <Input
-                aria-label="搜索待办"
-                placeholder="搜索待办、标签或步骤…"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                className="w-full sm:w-56"
-              />
-              <div className="w-36">
-                <Choice
-                  value={sort}
-                  onChange={setSort}
-                  options={[
-                    { value: "due", label: "按截止日期" },
-                    { value: "priority", label: "按优先级" },
-                    { value: "newest", label: "按创建时间" },
-                  ]}
-                  label="待办排序"
+        <TodoState>
+          <RecordsGrid
+            title={title}
+            icon={<ListTodoIcon className="size-4" aria-hidden="true" />}
+            records={records}
+            columns={columns}
+            leadingContent={
+              <>
+                <form className="flex items-center gap-2" onSubmit={quickAdd}>
+                  <Input
+                    aria-label="快速添加待办"
+                    disabled={busyIds.includes("task:create")}
+                    placeholder="添加待办…"
+                    value={quickTitle}
+                    maxLength={200}
+                    onChange={(event) => setQuickTitle(event.target.value)}
+                  />
+                  <Button
+                    type="submit"
+                    size="default"
+                    disabled={
+                      !quickTitle.trim() || busyIds.includes("task:create")
+                    }
+                  >
+                    添加
+                  </Button>
+                </form>
+              </>
+            }
+            toolbar={
+              <>
+                <Input
+                  aria-label="搜索待办"
+                  placeholder="搜索待办、标签或步骤…"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  className="w-full sm:w-56"
                 />
-              </div>
-              <Filters
-                fields={fields}
-                query={query}
-                onQueryChange={setQuery}
-                size="sm"
-                labels={{ addFilter: "筛选", clear: "清除" }}
+                <div className="w-36">
+                  <Choice
+                    value={sort ?? currentView?.sort ?? "due"}
+                    onChange={setSort}
+                    options={[
+                      { value: "due", label: "按截止日期" },
+                      { value: "priority", label: "按优先级" },
+                      { value: "newest", label: "按创建时间" },
+                    ]}
+                    label="待办排序"
+                  />
+                </div>
+                <Filters
+                  fields={fields}
+                  query={query}
+                  onQueryChange={setQuery}
+                  size="default"
+                  labels={{ ...TODO_FILTER_LABELS, addFilter: "筛选" }}
+                />
+              </>
+            }
+            empty={
+              <EmptyState
+                title={
+                  search || query.rules.length ? "没有匹配的待办" : "暂无待办"
+                }
+                action={search || query.rules.length ? "清除筛选" : "新增待办"}
+                onAction={
+                  search || query.rules.length
+                    ? clearFilters
+                    : () => setEditing("new")
+                }
               />
-            </>
-          }
-          empty={
-            <EmptyState
-              title={
-                search || query.rules.length ? "没有匹配的待办" : "暂无待办"
-              }
-              action={search || query.rules.length ? "清除筛选" : "新增待办"}
-              onAction={
-                search || query.rules.length
-                  ? clearFilters
-                  : () => setEditing("new")
-              }
-            />
-          }
-        />
+            }
+          />
+        </TodoState>
       </WorkbenchScreen>
       {target && (
         <TodoEditor
-          key={target === "new" ? "new" : target.id}
+          key={`${target === "new" ? "new" : target.id}:${editorRevision}`}
           todo={target === "new" ? undefined : target}
           listId={currentList?.id ?? INBOX_ID}
           defaults={defaults}
           onClose={closeEditor}
+          onReload={() => {
+            if (target !== "new") {
+              setEditing(
+                data.todos.find((todo) => todo.id === target.id) ?? null
+              )
+              setEditorRevision((value) => value + 1)
+            }
+          }}
         />
       )}
       {editingList && (
@@ -573,29 +596,57 @@ export function Todos() {
           onClose={() => setEditingList(null)}
         />
       )}
+      {editingView && (
+        <ViewDialog
+          source={editingView === "new" ? undefined : editingView}
+          onClose={() => setEditingView(null)}
+          onSaved={(view) => {
+            setParams({ view: view.id })
+            clearFilters()
+            setSort(null)
+          }}
+        />
+      )}
+      {prioritiesOpen && (
+        <PriorityDialog onClose={() => setPrioritiesOpen(false)} />
+      )}
       <DeleteConfirm
         open={!!deleting}
         onOpenChange={(open) => {
           if (!open) setDeleting(null)
         }}
-        title={deleting === "list" ? "删除这个清单？" : "删除这条待办？"}
-        description={
-          deleting === "list"
-            ? `${data.todos.filter((todo) => todo.listId === listId).length} 项待办将移入收集箱。`
-            : `“${deleting?.title ?? ""}”`
+        title={
+          deleting === "view"
+            ? "删除这个视图？"
+            : deleting === "list"
+              ? "删除这个清单？"
+              : "删除这条待办？"
         }
-        onConfirm={() => {
-          const saved = updateWorkbench((current) =>
-            deleting === "list"
-              ? removeList(current, listId ?? "")
-              : {
-                  ...current,
-                  todos: current.todos.filter(
-                    (todo) => todo.id !== deleting?.id
-                  ),
-                }
-          )
+        description={
+          deleting === "view"
+            ? `“${currentView?.name ?? ""}”`
+            : deleting === "list"
+              ? `${data.todos.filter((todo) => todo.listId === listId).length} 项待办将移入收集箱。`
+              : `“${deleting?.title ?? ""}”`
+        }
+        onConfirm={async () => {
+          const saved =
+            deleting === "view" && currentView
+              ? await deleteTodoView(currentView)
+              : deleting === "list"
+                ? await deleteTodoList(listId ?? "")
+                : deleting && deleting !== "view"
+                  ? await deleteTodo(deleting)
+                  : false
           if (saved && deleting === "list") setParams({ list: INBOX_ID })
+          if (saved && deleting === "view") {
+            const remaining = data.todoViews.find(
+              (v) => v.id !== currentView?.id
+            )
+            if (remaining) setParams({ view: remaining.id })
+            clearFilters()
+            setSort(null)
+          }
           return saved
         }}
       />

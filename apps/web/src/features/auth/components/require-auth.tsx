@@ -50,7 +50,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
       )}
       {auth.user && (
         <div
-          key="workspace"
+          key={auth.user.id}
           hidden={auth.status === "error"}
           className={auth.status === "error" ? "hidden" : "contents"}
         >

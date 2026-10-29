@@ -39,6 +39,7 @@ export type InnerNavSection = {
   id: string
   title: string
   items: InnerNavItem[]
+  action?: ReactNode
 }
 
 export type InnerNavData = {

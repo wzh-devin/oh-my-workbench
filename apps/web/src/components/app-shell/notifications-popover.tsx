@@ -1,3 +1,4 @@
+import { TodoState } from "@/features/todos/components/todo-state"
 import { useState } from "react"
 import { Link } from "react-router"
 import {
@@ -115,78 +116,80 @@ export function NotificationsPopover() {
         </div>
         <ScrollArea className="min-h-0 flex-1">
           <WorkbenchState>
-            {records.length ? (
-              <ul className="flex flex-col divide-y divide-border">
-                {records.map((record) => {
-                  const Icon = ICONS[record.kind]
-                  return (
-                    <li key={record.id}>
-                      <Link
-                        to={record.href}
-                        className="flex items-start gap-3 p-3 transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                        onClick={(event) => {
-                          if (record.unread && !markRead([record.id])) {
-                            event.preventDefault()
-                            return
-                          }
-                          close()
-                        }}
-                      >
-                        <Icon
-                          className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                          aria-hidden="true"
-                        />
-                        <div className="flex min-w-0 flex-1 flex-col gap-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge
-                              variant={
-                                record.kind === "connections"
-                                  ? "destructive-light"
-                                  : record.kind === "todos"
-                                    ? "warning-light"
-                                    : "secondary"
-                              }
-                            >
-                              {record.title}
-                            </Badge>
-                            {record.unread && (
-                              <span className="text-xs text-muted-foreground">
-                                未读
-                              </span>
-                            )}
+            <TodoState>
+              {records.length ? (
+                <ul className="flex flex-col divide-y divide-border">
+                  {records.map((record) => {
+                    const Icon = ICONS[record.kind]
+                    return (
+                      <li key={record.id}>
+                        <Link
+                          to={record.href}
+                          className="flex items-start gap-3 p-3 transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                          onClick={(event) => {
+                            if (record.unread && !markRead([record.id])) {
+                              event.preventDefault()
+                              return
+                            }
+                            close()
+                          }}
+                        >
+                          <Icon
+                            className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                            aria-hidden="true"
+                          />
+                          <div className="flex min-w-0 flex-1 flex-col gap-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge
+                                variant={
+                                  record.kind === "connections"
+                                    ? "destructive-light"
+                                    : record.kind === "todos"
+                                      ? "warning-light"
+                                      : "secondary"
+                                }
+                              >
+                                {record.title}
+                              </Badge>
+                              {record.unread && (
+                                <span className="text-xs text-muted-foreground">
+                                  未读
+                                </span>
+                              )}
+                            </div>
+                            <p className="line-clamp-2 text-sm break-words">
+                              {record.body}
+                            </p>
                           </div>
-                          <p className="line-clamp-2 text-sm break-words">
-                            {record.body}
-                          </p>
-                        </div>
-                      </Link>
-                    </li>
-                  )
-                })}
-              </ul>
-            ) : (
-              <Empty>
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <BellIcon aria-hidden="true" />
-                  </EmptyMedia>
-                  <EmptyTitle>暂无通知</EmptyTitle>
-                </EmptyHeader>
-                <EmptyContent>
-                  <Button
-                    nativeButton={false}
-                    role="link"
-                    render={
-                      <Link to="/settings/notifications" onClick={close} />
-                    }
-                    size="sm"
-                    variant="outline"
-                  >
-                    通知设置
-                  </Button>
-                </EmptyContent>
-              </Empty>
-            )}
+                        </Link>
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : (
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <BellIcon aria-hidden="true" />
+                    </EmptyMedia>
+                    <EmptyTitle>暂无通知</EmptyTitle>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    <Button
+                      nativeButton={false}
+                      role="link"
+                      render={
+                        <Link to="/settings/notifications" onClick={close} />
+                      }
+                      size="sm"
+                      variant="outline"
+                    >
+                      通知设置
+                    </Button>
+                  </EmptyContent>
+                </Empty>
+              )}
+            </TodoState>
           </WorkbenchState>
         </ScrollArea>
       </PopoverContent>

@@ -36,6 +36,13 @@ test/
 tests/
 __tests__/
 __mocks__/
+example/
+examples/
+testdata/
+fixture/
+fixtures/
+__fixtures__/
+/apps/api/cmd/rulelab/
 coverage/
 /apps/api/.bin/
 /apps/api/bin/

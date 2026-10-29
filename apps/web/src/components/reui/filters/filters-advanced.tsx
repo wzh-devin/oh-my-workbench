@@ -1446,6 +1446,13 @@ function addFilterRow<V, O>(
 
 /** The panel draws NO border, NO background and NO radius, and takes no
  * element to be drawn as: a surface is the page's decision. */
+export interface FiltersAdvancedFooterContext extends FilterEmptyStateContext {
+  clear: () => void
+  canClear: boolean
+  disabled: boolean
+  addFilterRef: React.Ref<HTMLButtonElement>
+}
+
 export interface FiltersAdvancedPanelProps {
   /** Which of the two boxes the panel sits in, the only thing deciding whether
    * it pads itself: a popover's content is `p-0`, so this padding IS its
@@ -1454,6 +1461,10 @@ export interface FiltersAdvancedPanelProps {
   /** Replaces the empty state for this panel only. Wins over
    * `Filters.renderEmpty`, the precedence a field has over the root's. */
   renderEmpty?: (context: FilterEmptyStateContext) => React.ReactNode
+  /** Wraps only the rows, e.g. to scroll them independently of the toolbar. */
+  renderBody?: (body: React.ReactNode) => React.ReactNode
+  /** Reuses the panel's mutations and focus handoff with custom controls. */
+  footer?: React.ComponentType<FiltersAdvancedFooterContext>
   /** Whether rows can be reordered. See `FiltersProps.reorderable`. */
   reorderable?: boolean
   className?: string
@@ -1466,6 +1477,8 @@ export interface FiltersAdvancedPanelProps {
 export function FiltersAdvancedPanel<V, O>({
   mode = "popover",
   renderEmpty,
+  renderBody,
+  footer: Footer,
   reorderable = false,
   className,
 }: FiltersAdvancedPanelProps) {
@@ -1768,7 +1781,9 @@ export function FiltersAdvancedPanel<V, O>({
   const dragProps = useFilterRowDrag({
     // THE PANEL, reached through the body, because the top level's append
     // zone is in the FOOTER and the footer is the body's sibling.
-    root: () => bodyRef.current?.parentElement ?? null,
+    root: () =>
+      bodyRef.current?.closest<HTMLElement>('[data-slot="filters-advanced"]') ??
+      null,
     disabled: locked,
     onDrop: (nodeId, drop) => {
       if (drop.copy) actions.copyNodeTo(nodeId, drop.parentId, drop.index)
@@ -1813,6 +1828,74 @@ export function FiltersAdvancedPanel<V, O>({
       })
     : null
 
+  const rows =
+    query.rules.length > 0 ? (
+      <div
+        ref={bodyRef}
+        data-slot="filters-advanced-body"
+        /* NO `overflow-x`: nothing here is ever wider than its box. */
+        className={cn(
+          TRACK_CONTAINER_CLASS,
+          "flex min-w-0 flex-col",
+          FILTER_ROW_GAP_CLASS,
+          PANEL_GUTTER_CLASS
+        )}
+        onKeyDown={onKeyDown}
+      >
+        <FilterReorderProvider value={reorderable}>
+          <FilterDragContext.Provider value={reorderable ? dragProps : null}>
+            <FilterIssueContext.Provider value={visibleIssueMap}>
+              {query.rules.map((node, index) => (
+                <FilterAdvancedNode<V, O>
+                  key={node.id}
+                  node={node}
+                  position={{
+                    index,
+                    parentId: query.id,
+                    combinator: query.combinator,
+                    depth: 1,
+                  }}
+                />
+              ))}
+            </FilterIssueContext.Provider>
+          </FilterDragContext.Provider>
+        </FilterReorderProvider>
+      </div>
+    ) : /*
+          THE EMPTY STATE, a real state and not a missing one: with no rules
+          the body renders nothing, so the panel used to open as a footer
+          floating in a blank popover. The HINT is withheld when the bar is
+          locked, since it points at two disabled buttons.
+        */
+    // The CALLBACK's presence decides, not its result: a consumer returning
+    // null wants a blank panel, and `??` would hand them the default back.
+    renderEmptyState ? (
+      emptyState
+    ) : (
+      <div
+        data-slot="filters-advanced-empty"
+        className={cn(
+          "flex flex-col items-center justify-center gap-1 py-8 text-center",
+          PANEL_GUTTER_CLASS
+        )}
+      >
+        <span
+          aria-hidden="true"
+          /* `rounded-full` is the one radius literal safe in every
+               style, square or round. */
+          className="mb-1 flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground [&_svg]:size-4"
+        >
+          <ListFilterIcon />
+        </span>
+        <p className="text-sm font-medium">{actions.labels.builderEmpty}</p>
+        {actions.readOnly ? null : (
+          <p className="text-xs text-muted-foreground">
+            {actions.labels.builderEmptyHint}
+          </p>
+        )}
+      </div>
+    )
+
   const body = (
     <>
       {/* VISIBLE, not an ARIA attribute: `aria-readonly` is illegal on every
@@ -1826,72 +1909,7 @@ export function FiltersAdvancedPanel<V, O>({
         </p>
       ) : null}
 
-      {query.rules.length > 0 ? (
-        <div
-          ref={bodyRef}
-          data-slot="filters-advanced-body"
-          /* NO `overflow-x`: nothing here is ever wider than its box. */
-          className={cn(
-            TRACK_CONTAINER_CLASS,
-            "flex min-w-0 flex-col",
-            FILTER_ROW_GAP_CLASS,
-            PANEL_GUTTER_CLASS
-          )}
-          onKeyDown={onKeyDown}
-        >
-          <FilterReorderProvider value={reorderable}>
-            <FilterDragContext.Provider value={reorderable ? dragProps : null}>
-              <FilterIssueContext.Provider value={visibleIssueMap}>
-                {query.rules.map((node, index) => (
-                  <FilterAdvancedNode<V, O>
-                    key={node.id}
-                    node={node}
-                    position={{
-                      index,
-                      parentId: query.id,
-                      combinator: query.combinator,
-                      depth: 1,
-                    }}
-                  />
-                ))}
-              </FilterIssueContext.Provider>
-            </FilterDragContext.Provider>
-          </FilterReorderProvider>
-        </div>
-      ) : /*
-          THE EMPTY STATE, a real state and not a missing one: with no rules
-          the body renders nothing, so the panel used to open as a footer
-          floating in a blank popover. The HINT is withheld when the bar is
-          locked, since it points at two disabled buttons.
-        */
-      // The CALLBACK's presence decides, not its result: a consumer returning
-      // null wants a blank panel, and `??` would hand them the default back.
-      renderEmptyState ? (
-        emptyState
-      ) : (
-        <div
-          data-slot="filters-advanced-empty"
-          className={cn(
-            "flex flex-col items-center justify-center gap-1 py-8 text-center",
-            PANEL_GUTTER_CLASS
-          )}
-        >
-          <span
-            aria-hidden="true"
-            /* `rounded-full` is the one radius literal safe in every
-               style, square or round. */
-            className="mb-1 flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground [&_svg]:size-4"
-          >
-            <ListFilterIcon />
-          </span>
-          <p className="text-sm font-medium">{actions.labels.builderEmpty}</p>
-          {actions.readOnly ? null : (
-            <p className="text-xs text-muted-foreground">
-              {actions.labels.builderEmptyHint}
-            </p>
-          )}
-        </div>
-      )}
+      {renderBody ? renderBody(rows) : rows}
 
       {/* `shrink-0` on all three: a button clips its label rather than
           reflowing it, so Clear all read as "ear all filters". */}
@@ -1916,48 +1934,67 @@ export function FiltersAdvancedPanel<V, O>({
           query.rules.length > 0 && cn(FILTER_ROW_GAP_CANCEL_CLASS, "pt-5")
         )}
       >
-        <Button
-          /* The last resort of `restoreFocus`: the only control that exists
+        {Footer ? (
+          <Footer
+            labels={actions.labels}
+            mode={mode}
+            readOnly={Boolean(actions.readOnly)}
+            addFilter={addRow}
+            addGroup={addGroup}
+            clear={() => {
+              actions.clearQuery()
+              addRowRef.current?.focus()
+            }}
+            canClear={query.rules.length > 0}
+            disabled={locked}
+            addFilterRef={addRowRef}
+          />
+        ) : (
+          <>
+            <Button
+              /* The last resort of `restoreFocus`: the only control that exists
              at every query. */
-          ref={addRowRef}
-          /* OUTLINE, and the only pair in the panel with a box: they are
+              ref={addRowRef}
+              /* OUTLINE, and the only pair in the panel with a box: they are
              what the footer is FOR. */
-          variant="outline"
-          size={sizes.button}
-          className="shrink-0 font-normal"
-          disabled={actions.disabled}
-          {...filterReadOnlyProps(actions)}
-          onClick={addRow}
-        >
-          <PlusIcon />
-          {actions.labels.addCondition}
-        </Button>
+              variant="outline"
+              size={sizes.button}
+              className="shrink-0 font-normal"
+              disabled={actions.disabled}
+              {...filterReadOnlyProps(actions)}
+              onClick={addRow}
+            >
+              <PlusIcon />
+              {actions.labels.addCondition}
+            </Button>
 
-        <Button
-          variant="outline"
-          size={sizes.button}
-          className="shrink-0 font-normal"
-          disabled={actions.disabled}
-          {...filterReadOnlyProps(actions)}
-          onClick={addGroup}
-        >
-          <FolderPlusIcon />
-          {actions.labels.addConditionGroup}
-        </Button>
+            <Button
+              variant="outline"
+              size={sizes.button}
+              className="shrink-0 font-normal"
+              disabled={actions.disabled}
+              {...filterReadOnlyProps(actions)}
+              onClick={addGroup}
+            >
+              <FolderPlusIcon />
+              {actions.labels.addConditionGroup}
+            </Button>
 
-        {/* NO PANEL-LEVEL SUMMARY: a validator's no belongs on the cell. */}
-        {ruleCount > 0 ? (
-          <Button
-            variant="ghost"
-            size={sizes.button}
-            className="ms-auto shrink-0 text-muted-foreground hover:text-foreground"
-            disabled={actions.disabled}
-            {...filterReadOnlyProps(actions)}
-            onClick={() => actions.clearQuery()}
-          >
-            {actions.labels.clearAll}
-          </Button>
-        ) : null}
+            {/* NO PANEL-LEVEL SUMMARY: a validator's no belongs on the cell. */}
+            {ruleCount > 0 ? (
+              <Button
+                variant="ghost"
+                size={sizes.button}
+                className="ms-auto shrink-0 text-muted-foreground hover:text-foreground"
+                disabled={actions.disabled}
+                {...filterReadOnlyProps(actions)}
+                onClick={() => actions.clearQuery()}
+              >
+                {actions.labels.clearAll}
+              </Button>
+            ) : null}
+          </>
+        )}
       </div>
 
       {/* The `key` is what makes a REPEATED sentence audible: `aria-live`

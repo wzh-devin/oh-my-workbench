@@ -51,7 +51,7 @@ import {
   updateWorkbench,
   useWorkbench,
 } from "@/features/workbench/store"
-import { newTask } from "@/features/todos/task-rules"
+import { createTodo, useTodos } from "@/features/todos/store"
 
 const FILTER_FIELDS: FilterField[] = [
   {
@@ -80,6 +80,7 @@ const FILTER_FIELDS: FilterField[] = [
 export function Mail() {
   const navigate = useNavigate()
   const { data, busyIds } = useWorkbench()
+  const todoState = useTodos()
   const [params, setParams] = useSearchParams()
   const accountId = params.get("account") ?? "all"
   const view = params.get("view") === "accounts" ? "accounts" : "inbox"
@@ -116,35 +117,24 @@ export function Mail() {
   const linkedTask = data.todos.find(
     (todo) => todo.source?.kind === "mail" && todo.source.id === detail?.id
   )
-  const convertToTask = () => {
+  /** 邮件来源由服务端在事务中查重，重复操作返回同一待办。 */
+  const convertToTask = async () => {
     if (!detail) return
     if (linkedTask) {
       navigate(`/todos?task=${encodeURIComponent(linkedTask.id)}`)
       return
     }
-    let taskId = ""
-    if (
-      updateWorkbench((current) => {
-        const existing = current.todos.find(
-          (todo) => todo.source?.kind === "mail" && todo.source.id === detail.id
-        )
-        if (existing) {
-          taskId = existing.id
-          return current
-        }
-        const title = detail.subject.trim().slice(0, 200) || "邮件待办"
-        const task = newTask(title, undefined, {
-          note: detail.body.slice(0, 2000),
-          source: { kind: "mail", id: detail.id, label: title },
-        })
-        taskId = task.id
-        return { ...current, todos: [task, ...current.todos] }
-      })
-    )
+    const title = detail.subject.trim().slice(0, 200) || "邮件待办"
+    const task = await createTodo({
+      title,
+      note: detail.body.slice(0, 2000),
+      source: { kind: "mail", id: detail.id, label: title },
+    })
+    if (task)
       toast.success("待办已添加", {
         action: {
           label: "查看",
-          onClick: () => navigate(`/todos?task=${encodeURIComponent(taskId)}`),
+          onClick: () => navigate(`/todos?task=${encodeURIComponent(task.id)}`),
         },
       })
   }
@@ -544,7 +534,15 @@ export function Mail() {
                     ?.email
                 : ""}
             </span>
-            <Button type="button" size="sm" onClick={convertToTask}>
+            <Button
+              type="button"
+              size="sm"
+              onClick={convertToTask}
+              disabled={
+                todoState.status !== "ready" ||
+                todoState.busyIds.includes("task:create")
+              }
+            >
               <ListTodoIcon aria-hidden="true" />
               {linkedTask ? "查看待办" : "转为待办"}
             </Button>

@@ -18,10 +18,16 @@ export function TodoDatePicker({
   id,
   value,
   onChange,
+  label = "截止日期",
+  compact = false,
+  disabled = false,
 }: {
   id: string
   value: string
   onChange: (value: string) => void
+  label?: string
+  compact?: boolean
+  disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const date = value ? new Date(`${value}T12:00:00`) : undefined
@@ -32,23 +38,29 @@ export function TodoDatePicker({
         render={
           <Button
             type="button"
-            className="group/pick-date w-full justify-between"
+            className={
+              compact ? undefined : "group/pick-date w-full justify-between"
+            }
             id={id}
-            variant="outline"
-            size="sm"
-            aria-label="截止日期"
+            variant={compact ? "ghost" : "outline"}
+            size={compact ? "icon-sm" : "sm"}
+            aria-label={label}
+            title={value ? `${label}：${value}` : label}
+            disabled={disabled}
           />
         }
       >
-        <span className={cn("truncate", !date && "text-muted-foreground")}>
-          {date ? format(date, "PPP", { locale: zhCN }) : "选择日期"}
-        </span>
+        {!compact && (
+          <span className={cn("truncate", !date && "text-muted-foreground")}>
+            {date ? format(date, "PPP", { locale: zhCN }) : "选择日期"}
+          </span>
+        )}
         <CalendarIcon aria-hidden="true" className="opacity-60" />
       </PopoverTrigger>
       <PopoverContent
         align="start"
         className="w-auto p-0"
-        aria-label="选择截止日期"
+        aria-label={`选择${label}`}
       >
         <Calendar
           mode="single"
@@ -61,6 +73,20 @@ export function TodoDatePicker({
             setOpen(false)
           }}
         />
+        <div className="flex justify-end border-t p-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={!value}
+            onClick={() => {
+              onChange("")
+              setOpen(false)
+            }}
+          >
+            清除日期
+          </Button>
+        </div>
       </PopoverContent>
     </Popover>
   )

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/devin/oh-my-workbench/api/internal/modules/auth"
+	"github.com/devin/oh-my-workbench/api/internal/modules/todos"
 	"github.com/devin/oh-my-workbench/api/internal/shared/response"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -13,11 +14,11 @@ import (
 )
 
 func newRouter(db *gorm.DB, rdb *redis.Client) *gin.Engine {
-	handler := auth.NewHandler(auth.NewService(auth.NewRepository(db), rdb))
+	handler := auth.NewHandler(auth.NewService(auth.NewRepository(db, rdb)))
 	r := gin.New()
 	r.Use(gin.Recovery())
 	_ = r.SetTrustedProxies(nil)
-	api := r.Group("/api/auth", func(c *gin.Context) {
+	api := r.Group("/api", func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
 		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
 			origin := c.GetHeader("Origin")
@@ -35,10 +36,8 @@ func newRouter(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		}
 		c.Next()
 	})
-	api.GET("/status", handler.Status)
-	api.POST("/login", handler.Login)
-	api.POST("/initSystemAdmin", handler.InitSystemAdmin)
-	api.GET("/me", handler.RequireSession, handler.Me)
-	api.POST("/logout", handler.Logout)
+	handler.RegisterRoutes(api.Group("/auth"))
+	todoHandler := todos.NewHandler(todos.NewService(todos.NewRepository(db)))
+	todoHandler.RegisterRoutes(api.Group("/todos", handler.RequireSession))
 	return r
 }

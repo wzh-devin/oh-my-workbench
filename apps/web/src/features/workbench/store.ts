@@ -1,5 +1,6 @@
-import { useEffect, useSyncExternalStore } from "react"
+import { useEffect, useMemo, useSyncExternalStore } from "react"
 import { toast } from "sonner"
+import { useTodos } from "@/features/todos/store"
 
 import { deleteFiles, getFile, putFiles, saveBlob } from "./local-files"
 import {
@@ -81,14 +82,24 @@ export const loadWorkbench = () => {
         return sample ? { ...asset, size: sample.size } : asset
       }),
     }
+    toast.dismiss("workbench-load")
     publish({ data, status: "ready", error: null })
     void flushFileDeletes().catch(() => {
+      if (snapshot.error) return
       publish({ error: "文件内容清理失败，请重试。" })
+      toast.error(snapshot.error, {
+        id: "workbench-load",
+        action: { label: "重试", onClick: loadWorkbench },
+      })
     })
   } catch {
     publish({
       status: "error",
       error: "数据读取失败，请检查存储权限后重试。",
+    })
+    toast.error(snapshot.error, {
+      id: "workbench-load",
+      action: { label: "重试", onClick: loadWorkbench },
     })
   }
 }
@@ -96,10 +107,19 @@ export const loadWorkbench = () => {
 /** 五个页面共享同一快照；切页与浏览器刷新保持记录一致。 */
 export const useWorkbench = () => {
   const current = useSyncExternalStore(subscribe, () => snapshot)
+  const todos = useTodos()
   useEffect(() => {
     if (snapshot.status === "loading") loadWorkbench()
   }, [])
-  return current
+  const data = useMemo(
+    () => ({ ...current.data, ...todos.data }),
+    [current.data, todos.data]
+  )
+  return {
+    ...current,
+    data,
+    busyIds: [...current.busyIds, ...todos.busyIds],
+  }
 }
 
 export const getWorkbench = () => snapshot.data
