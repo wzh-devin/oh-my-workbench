@@ -32,7 +32,13 @@ const anonymous: AuthState = {
 }
 
 /** 会话只以服务端为准；请求序号阻止旧响应覆盖登录或退出结果。 */
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({
+  children,
+  onBeforeLogout,
+}: {
+  children: ReactNode
+  onBeforeLogout?: () => Promise<void>
+}) {
   const [state, setState] = useState<AuthState>({
     ...anonymous,
     status: "loading",
@@ -106,6 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     ++revision.current
     pending.current?.abort()
+    await onBeforeLogout?.()
     await authApi.logout()
     ++revision.current
     pending.current?.abort()

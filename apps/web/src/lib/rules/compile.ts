@@ -17,8 +17,18 @@ const fail = (): never => {
   throw new Error("规则格式或参数不正确")
 }
 const isoDate = z.iso.date()
+const isoTimestamp = z.iso.datetime({ offset: true })
 
-/** 浏览器只执行可精确表示的整数与日历日；未支持的协议能力明确拒绝。 */
+/** 带时区时间统一为纳秒，避免不同时区或小数精度产生比较偏差。 */
+const timestampValue = (value: string) => {
+  const fraction = value.match(/\.(\d{1,9})/)?.[1] ?? ""
+  return (
+    BigInt(Date.parse(value)) * 1000000n +
+    BigInt(fraction.padEnd(9, "0").slice(3))
+  )
+}
+
+/** 浏览器执行已支持的类型；整数、日历日和带时区时间均先验证。 */
 const validValue = (value: unknown, type: RuleType): value is RuleValue => {
   if (type.endsWith("[]"))
     return (
@@ -27,12 +37,23 @@ const validValue = (value: unknown, type: RuleType): value is RuleValue => {
       value.every((item) => validValue(item, type.slice(0, -2) as RuleType))
     )
   if (type === "date") return isoDate.safeParse(value).success
+  if (type === "timestamp")
+    return (
+      typeof value === "string" &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/.test(
+        value
+      ) &&
+      isoTimestamp.safeParse(value).success
+    )
   if (type === "number")
     return typeof value === "number" && Number.isSafeInteger(value)
   return typeof value === type
 }
 /** 数组按元素顺序比较，保持通用协议的等值语义。 */
-const equals = (left: RuleValue, right: RuleValue): boolean =>
+const equals = (
+  left: RuleValue | bigint,
+  right: RuleValue | bigint
+): boolean =>
   Array.isArray(left) && Array.isArray(right)
     ? left.length === right.length && left.every((v, i) => v === right[i])
     : left === right
@@ -119,7 +140,7 @@ export const compileRule = (
         if (a.type !== "string" || b.type !== "string") fail()
       } else if (
         !["gt", "gte", "lt", "lte", "between"].includes(op) ||
-        !["number", "string", "date"].includes(a.type) ||
+        !["number", "string", "date", "timestamp"].includes(a.type) ||
         a.type !== b.type ||
         (op === "between" && args[2].type !== a.type)
       )
@@ -131,13 +152,18 @@ export const compileRule = (
     )
       fail()
     return (facts, context) => {
-      const values = args.map((arg) => arg.read(facts, context)),
+      const values = args.map((arg) => {
+          const value = arg.read(facts, context)
+          return arg.type === "timestamp" && typeof value === "string"
+            ? timestampValue(value)
+            : value
+        }),
         left = values[0],
         right = values[1]
       if (op === "exists") return left !== undefined
       if (values.some((v) => v === undefined)) fail()
-      const x = left as RuleValue,
-        y = right as RuleValue
+      const x = left as RuleValue | bigint,
+        y = right as RuleValue | bigint
       if (op === "is_null") return x === null
       if (op === "is_empty")
         return (
@@ -164,18 +190,28 @@ export const compileRule = (
             (x as RuleValue[]).some((item) => equals(item, v))
           )
         case "gt":
-          return (x as string | number) > (y as string | number)
+          return (
+            (x as string | number | bigint) > (y as string | number | bigint)
+          )
         case "gte":
-          return (x as string | number) >= (y as string | number)
+          return (
+            (x as string | number | bigint) >= (y as string | number | bigint)
+          )
         case "lt":
-          return (x as string | number) < (y as string | number)
+          return (
+            (x as string | number | bigint) < (y as string | number | bigint)
+          )
         case "lte":
-          return (x as string | number) <= (y as string | number)
+          return (
+            (x as string | number | bigint) <= (y as string | number | bigint)
+          )
         case "between":
           return (
             values[2] !== null &&
-            (x as string | number) >= (y as string | number) &&
-            (x as string | number) <= (values[2] as string | number)
+            (x as string | number | bigint) >=
+              (y as string | number | bigint) &&
+            (x as string | number | bigint) <=
+              (values[2] as string | number | bigint)
           )
         default:
           return fail()

@@ -4,6 +4,8 @@ import { Outlet } from "react-router"
 import { TopProgressBar } from "@/components/navigation/top-progress-bar"
 import { ThemeProvider } from "@/components/theme/theme-provider"
 import { TodoSession } from "@/features/todos/session"
+import { MailSession } from "@/features/mail/session"
+import { disableMailPush } from "@/features/mail/push"
 import { AuthProvider } from "@/features/auth/auth-context"
 import { Toaster } from "@/components/ui/sonner"
 
@@ -12,8 +14,9 @@ export function AppProviders() {
     <ThemeProvider>
       <MotionConfig reducedMotion="user">
         <TopProgressBar />
-        <AuthProvider>
+        <AuthProvider onBeforeLogout={disableMailPush}>
           <TodoSession />
+          <MailSession />
           <Outlet />
         </AuthProvider>
         <Toaster

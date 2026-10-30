@@ -9,8 +9,7 @@ import {
   TextSearchIcon,
 } from "lucide-react"
 import { toast } from "sonner"
-import { Filters } from "@/components/reui/filters/filters"
-import { FiltersAdvancedPanel } from "@/components/reui/filters/filters-advanced"
+import { RuleFilters } from "@/components/shared/rule-filters"
 import type {
   FilterEditorProps,
   FilterField,
@@ -20,7 +19,6 @@ import { createFilterQuery } from "@/components/reui/filters/filters-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FieldLabel } from "@/components/ui/field"
-import { Card, CardContent } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -35,7 +33,6 @@ import { DATE_PRESETS, queryToRule, ruleToQuery } from "../view-rules"
 import { TODO_FILTER_LABELS } from "../filter-labels"
 import { TodoDatePicker } from "./todo-date-picker"
 import { ViewIconPicker } from "./view-icons"
-import { ViewRuleActions } from "./view-rule-actions"
 
 const equality: FilterOperator[] = [
   { value: "eq", label: "是", inverse: "ne" },
@@ -302,40 +299,14 @@ export function ViewDialog({
             </Field>
             <div className="flex min-w-0 flex-col gap-2">
               <span className="text-sm font-medium">规则</span>
-              <div className="min-w-0 p-px">
-                <Card size="sm" className="w-full">
-                  <CardContent className="min-w-0">
-                    <Filters
-                      fields={fields}
-                      query={query}
-                      onQueryChange={setQuery}
-                      disabled={pending}
-                      size="sm"
-                      labels={TODO_FILTER_LABELS}
-                    >
-                      <FiltersAdvancedPanel
-                        mode="inline"
-                        reorderable
-                        renderBody={(body) => (
-                          <div
-                            data-slot="view-rule-scroll"
-                            className="min-w-0 overflow-x-auto"
-                          >
-                            <div
-                              className={
-                                query.rules.length ? "min-w-3xl" : undefined
-                              }
-                            >
-                              {body}
-                            </div>
-                          </div>
-                        )}
-                        footer={ViewRuleActions}
-                      />
-                    </Filters>
-                  </CardContent>
-                </Card>
-              </div>
+              <RuleFilters
+                mode="inline"
+                fields={fields}
+                query={query}
+                onQueryChange={setQuery}
+                disabled={pending}
+                labels={TODO_FILTER_LABELS}
+              />
             </div>
             <Field>
               <FieldLabel>排序</FieldLabel>

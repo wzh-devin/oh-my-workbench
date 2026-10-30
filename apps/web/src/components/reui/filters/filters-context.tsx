@@ -307,6 +307,7 @@ export interface FilterFocus {
     | "operator"
     | "value"
     | "add"
+    | "add-group"
     | "menu"
     | "ungroup"
     | "remove"

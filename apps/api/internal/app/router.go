@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/devin/oh-my-workbench/api/internal/modules/auth"
+	"github.com/devin/oh-my-workbench/api/internal/modules/mail"
 	"github.com/devin/oh-my-workbench/api/internal/modules/todos"
 	"github.com/devin/oh-my-workbench/api/internal/shared/response"
 	"github.com/gin-gonic/gin"
@@ -13,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func newRouter(db *gorm.DB, rdb *redis.Client) *gin.Engine {
+func newRouter(db *gorm.DB, rdb *redis.Client, mailService *mail.Service) *gin.Engine {
 	handler := auth.NewHandler(auth.NewService(auth.NewRepository(db, rdb)))
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -39,5 +40,6 @@ func newRouter(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	handler.RegisterRoutes(api.Group("/auth"))
 	todoHandler := todos.NewHandler(todos.NewService(todos.NewRepository(db)))
 	todoHandler.RegisterRoutes(api.Group("/todos", handler.RequireSession))
+	mail.NewHandler(mailService).RegisterRoutes(api.Group("/mail", handler.RequireSession))
 	return r
 }

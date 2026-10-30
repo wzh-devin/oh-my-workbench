@@ -27,6 +27,8 @@ import {
 } from "./model"
 import { RecordHint, RecordsGrid } from "./records-grid"
 import { refreshConnection, updateWorkbench, useWorkbench } from "./store"
+import { saveMailAccount } from "@/features/mail/store"
+import { MailProviderIcon } from "@/features/mail/components/mail-provider-icon"
 
 type ConnectionRow = {
   id: string
@@ -37,6 +39,7 @@ type ConnectionRow = {
   status: ConnectionStatus
   lastSync: string | null
   error: string | null
+  syncing?: boolean
 }
 
 /** 连接管理复用现有 DataGrid，分类交给 AppShell 左侧导航。 */
@@ -64,34 +67,34 @@ export function ConnectionsTable({
       .toLowerCase()
       .includes(search.toLowerCase())
   )
-  const toggle = (id: string) =>
-    updateWorkbench((current) =>
-      kind === "mail"
-        ? {
-            ...current,
-            accounts: current.accounts.map((record) =>
-              record.id === id
-                ? {
-                    ...record,
-                    status: record.status === "paused" ? "connected" : "paused",
-                    error: null,
-                  }
-                : record
-            ),
-          }
-        : {
-            ...current,
-            connections: current.connections.map((record) =>
-              record.id === id
-                ? {
-                    ...record,
-                    status: record.status === "paused" ? "connected" : "paused",
-                    error: null,
-                  }
-                : record
-            ),
-          }
-    )
+  const toggle = (id: string) => {
+    if (kind === "mail") {
+      const account = data.accounts.find((item) => item.id === id)
+      if (account)
+        void saveMailAccount(
+          {
+            name: account.name,
+            enabled: !account.enabled,
+            version: account.version,
+          },
+          id
+        )
+      return
+    }
+    return updateWorkbench((current) => ({
+      ...current,
+      connections: current.connections.map((record) =>
+        record.id === id
+          ? {
+              ...record,
+              status: record.status === "paused" ? "connected" : "paused",
+              error: null,
+            }
+          : record
+      ),
+    }))
+  }
+
   const columns: ColumnDef<DataGridFeatures, ConnectionRow>[] = [
     {
       accessorKey: "name",
@@ -107,7 +110,20 @@ export function ConnectionsTable({
         </span>
       ),
     },
-    { accessorKey: "provider", header: "服务", size: 120 },
+    {
+      accessorKey: "provider",
+      header: "服务",
+      size: 120,
+      cell: ({ row }) => (
+        <span className="flex items-center gap-2">
+          {(row.original.provider === "QQ" ||
+            row.original.provider === "Gmail") && (
+            <MailProviderIcon provider={row.original.provider} />
+          )}
+          {row.original.provider}
+        </span>
+      ),
+    },
     {
       accessorKey: "source",
       header: kind === "mail" ? "邮箱地址" : "Endpoint",
@@ -169,7 +185,7 @@ export function ConnectionsTable({
       id: "actions",
       header: "操作",
       size: 80,
-      meta: { headerClassName: "text-center", cellClassName: "text-center" },
+      meta: { align: "center" },
       cell: ({ row }) => (
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -204,6 +220,8 @@ export function ConnectionsTable({
             <DropdownMenuItem
               disabled={
                 busyIds.includes(row.original.id) ||
+                busyIds.includes(`sync:${row.original.id}`) ||
+                row.original.syncing ||
                 row.original.status === "paused"
               }
               onClick={() => {

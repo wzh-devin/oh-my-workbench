@@ -7,6 +7,8 @@
 
 前端源码位于 `apps/web/src/`；下文的 `components/ui`、`components/reui` 等源码路径均相对此目录。ReUI/shadcn CLI 从 `apps/web/` 运行。
 
+规则筛选器统一使用 `components/shared/rule-filters.tsx` 的 `RuleFilters`，以视图规则编辑器为样式基准；默认弹出式，视图表单使用 `mode="inline"`。业务页面只传 `fields`、`query`、`onQueryChange` 及必要的业务文案，不另写面板、操作栏或通用筛选文案。新增组合规则时直接计算规则树，禁止展平后丢失 AND/OR 与嵌套语义。
+
 <!-- BEGIN:reui-agent-rules -->
 ## ReUI design rules (every UI edit, follow-ups included)
 

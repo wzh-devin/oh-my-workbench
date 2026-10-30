@@ -21,7 +21,7 @@ import {
 // its page sizes need the SelectGroup that gives the Select its p-1: listed
 // straight in the popup, the sizes run edge to edge.
 
-export const PAGE_SIZES = [5, 10, 20]
+export const PAGE_SIZES = [10, 15, 30, 50, 100]
 const PAGE_GROUP_LIMIT = 5
 
 export function DataGridPagination<T extends object>({
@@ -37,6 +37,9 @@ export function DataGridPagination<T extends object>({
   const pageIndex = table.state.pagination.pageIndex
   const pageSize = table.state.pagination.pageSize
   const pageCount = table.getPageCount()
+  const pageSizes = [...new Set([...PAGE_SIZES, pageSize])].sort(
+    (a, b) => a - b
+  )
   const from = recordCount === 0 ? 0 : pageIndex * pageSize + 1
   const to = Math.min((pageIndex + 1) * pageSize, recordCount)
   const currentGroupStart =
@@ -63,14 +66,14 @@ export function DataGridPagination<T extends object>({
         >
           <SelectTrigger
             aria-label={i18n.labels.rowsPerPage}
-            className="w-16"
+            className="w-20"
             size="sm"
           >
             <SelectValue />
           </SelectTrigger>
           <SelectContent side="top" className="min-w-18">
             <SelectGroup>
-              {PAGE_SIZES.map((size) => (
+              {pageSizes.map((size) => (
                 <SelectItem key={size} value={`${size}`}>
                   {size}
                 </SelectItem>

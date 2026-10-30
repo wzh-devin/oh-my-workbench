@@ -15,6 +15,8 @@ import { AccountSecuritySettings } from "./account-security-settings"
 import { SettingGroup } from "./sections/setting-group"
 import { SettingRow } from "./sections/setting-row"
 import { SettingsSection } from "./sections/settings-section"
+import { MailPushSettings } from "@/features/mail/components/push-settings"
+import { setMailNotifications, useMail } from "@/features/mail/store"
 
 function GeneralSettings() {
   const { data } = useWorkbench()
@@ -115,6 +117,7 @@ function ProfileSettings() {
 
 function NotificationSettings() {
   const { data } = useWorkbench()
+  const mail = useMail()
   const id = useId()
   const options = [
     { key: "todos", label: "待办到期" },
@@ -124,17 +127,21 @@ function NotificationSettings() {
   return (
     <SettingsSection title="通知设置">
       <SettingGroup legend="通知设置">
-        {options.map(({ key, label }, index) => (
-          <SettingRow
-            key={key}
-            title={label}
-            labelFor={`${id}-${key}`}
-            last={index === options.length - 1}
-          >
+        {options.map(({ key, label }) => (
+          <SettingRow key={key} title={label} labelFor={`${id}-${key}`}>
             <Switch
               id={`${id}-${key}`}
               checked={data.preferences.notifications[key]}
+              disabled={
+                key === "mail" &&
+                (mail.status !== "ready" ||
+                  mail.busyIds.includes("preferences"))
+              }
               onCheckedChange={(checked) => {
+                if (key === "mail") {
+                  void setMailNotifications(checked)
+                  return
+                }
                 updateWorkbench((current) => ({
                   ...current,
                   preferences: {
@@ -149,6 +156,7 @@ function NotificationSettings() {
             />
           </SettingRow>
         ))}
+        <MailPushSettings />
       </SettingGroup>
     </SettingsSection>
   )

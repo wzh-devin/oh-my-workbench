@@ -154,7 +154,7 @@ export function WorkbenchScreen({
       className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col"
     >
       <HeaderActions>{actions}</HeaderActions>
-      <div className="flex min-w-0 flex-1 flex-col gap-4 p-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-4 p-4 pb-0">
         <h1 id={titleId} className="sr-only">
           {title}
         </h1>

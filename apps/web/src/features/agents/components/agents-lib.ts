@@ -1,4 +1,6 @@
 import type { FilterCondition } from "@/components/reui/filters/filters-query"
+import type { FilterQuery } from "@/components/reui/filters/filters-types"
+import { matchesFilterQuery } from "@/lib/filter-query"
 
 import {
   AGENT_OWNERS,
@@ -111,25 +113,23 @@ function matchesFilter(
   }
 }
 
+/** 保留分组与 OR 语义，旧平面条件调用仍可直接使用。 */
 export function applyAgentFilters(
   agents: AgentRecord[],
-  filters: FilterCondition[]
+  filters: FilterCondition[] | FilterQuery
 ) {
-  return getActiveFilters(filters).reduce((result, filter) => {
-    const { field, operator, values, negated } = filter
-
-    return result.filter((agent) => {
+  return agents.filter((agent) =>
+    matchesFilterQuery(filters, (filter) => {
+      if (!getActiveFilters([filter]).length) return undefined
+      const { field, operator, values, negated } = filter
       const matches = matchesFilter(
         filterFieldValue(agent, field),
         operator,
         values
       )
-
-      // The chip menu's Negate swaps to the operator's declared inverse when it
-      // has one and raises this flag when it does not.
       return negated ? !matches : matches
     })
-  }, agents)
+  )
 }
 
 // ── Form ──

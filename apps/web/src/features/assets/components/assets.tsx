@@ -28,7 +28,7 @@ import {
   AlertTitle,
 } from "@/components/reui/alert"
 import type { DataGridFeatures } from "@/components/reui/data-grid/data-grid"
-import { Filters } from "@/components/reui/filters/filters"
+import { RuleFilters } from "@/components/shared/rule-filters"
 import { createFilterQuery } from "@/components/reui/filters/filters-query"
 import type { FilterField } from "@/components/reui/filters/filters-types"
 import {
@@ -81,7 +81,7 @@ import { recordOpened, starEntries } from "../asset-store"
 import { useAssetOperations } from "../use-asset-operations"
 import { droppedFiles } from "../file-drop"
 import { AssetActions } from "./asset-actions"
-import { AssetFileIcon } from "./asset-file-icon"
+import { FileTypeIcon } from "@/components/shared/file-type-icon"
 import {
   AssetActionDialog,
   AssetDeleteDialog,
@@ -144,7 +144,7 @@ const EntryIcon = ({
   large?: boolean
 }) => {
   if (entry.kind === "file")
-    return <AssetFileIcon file={entry} size={large ? "xl" : "mini"} />
+    return <FileTypeIcon file={entry} size={large ? "xl" : "mini"} />
   return (
     <FolderIcon
       aria-hidden="true"
@@ -503,7 +503,7 @@ export function Assets() {
       id: "actions",
       header: "操作",
       size: 96,
-      meta: { headerClassName: "text-center", cellClassName: "text-center" },
+      meta: { align: "center" },
       cell: ({ row }) => actionsFor(row.original),
     },
   ]
@@ -550,7 +550,7 @@ export function Assets() {
         }}
         className="w-full sm:w-52"
       />
-      <Filters
+      <RuleFilters
         fields={FILTER_FIELDS}
         query={query}
         onQueryChange={(next) => {
@@ -558,8 +558,6 @@ export function Assets() {
           setGridPage(0)
           setSelectedIds([])
         }}
-        size="sm"
-        labels={{ addFilter: "筛选" }}
       />
       {layout === "grid" && view !== "recent" && view !== "trash" && (
         <div className="flex items-center gap-1">
@@ -1125,7 +1123,6 @@ export function Assets() {
       </WorkbenchScreen>
       {configuring && (
         <ConnectionDialog
-          kind="storage"
           source={configuring === "new" ? undefined : configuring}
           onClose={() => setConfiguring(null)}
         />

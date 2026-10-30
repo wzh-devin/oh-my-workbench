@@ -4,6 +4,7 @@ export type RuleType =
   | "boolean"
   | "string"
   | "number"
+  | "timestamp"
   | "date"
   | "boolean[]"
   | "string[]"
@@ -44,6 +45,7 @@ const operandSchema = z.discriminatedUnion("kind", [
           "string",
           "number",
           "date",
+          "timestamp",
           "boolean[]",
           "string[]",
           "number[]",

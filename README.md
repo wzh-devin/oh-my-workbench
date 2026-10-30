@@ -2,7 +2,7 @@
 
 A workflow automation workspace built with Vite, React 19, TypeScript, Tailwind CSS 4 and ReUI, with a Go/Gin API. The repository uses pnpm workspaces.
 
-The personal workbench includes a Dashboard, Todo lists, QQ/Gmail inboxes, S3-compatible file assets and a React Flow resource overview. This iteration uses frontend sample data: metadata persists in localStorage and uploaded file bytes in IndexedDB. Mail and storage connections do not contact real services or collect credentials. Clearing browser storage removes these records and files.
+The personal workbench includes a Dashboard, Todo lists, QQ/Gmail inboxes, S3-compatible file assets and a React Flow resource overview. Todo and Mail use the authenticated Go API and PostgreSQL. Mail supports encrypted credentials, background IMAP synchronization and Web Push notifications while pages are closed. Storage assets still use localStorage metadata and IndexedDB file bytes. See [API setup, mailbox tables and notification flow](apps/api/README.md#邮箱与来信通知) before connecting a real mailbox; existing browser samples are preserved and are not uploaded.
 
 The existing workflow/agent editors remain available. On first deployment, `/login` detects an uninitialized system and opens an administrator setup dialog. After setup, sign in with that administrator's username and password. Sessions use HttpOnly cookies and Redis; refreshing restores the session, protected routes require authentication, and `退出登录` revokes the server session without deleting workbench records. Google/GitHub entries remain disabled until OAuth is implemented. Personal display preferences and workbench data retain their existing local persistence. Account-security forms still use the separate, currently unavailable `/api/account/security` contract.
 
@@ -121,7 +121,7 @@ For local HTTP development, set `COOKIE_SECURE=false` as shown in `apps/api/.env
 
 The primary pages are `/dashboard`, `/todos`, `/mail`, `/assets` and `/workflows` (the resource overview). Todo accepts `?list=<id>`, `?task=<id>` and `?view=myday|today|overdue|upcoming|important|completed`; Mail accepts `?account=<id>`, `?message=<id>` and `?view=accounts`; Assets accepts `?connection=<id>` and `?view=connections`.
 
-Todo includes Inbox, smart views, quick capture, due dates, daily planning, priorities, tags, editable steps, task details and a completed-task view. Lists can be renamed or removed; removing a list moves its tasks to Inbox. Mail can create a linked task and return to the original message. Existing v1 records receive default task metadata without being reset. Recurring tasks, background reminders and external synchronization are not implemented.
+Todo includes Inbox, smart views, quick capture, due dates, daily planning, priorities, tags, editable steps, task details and a completed-task view. Lists can be renamed or removed; removing a list moves its tasks to Inbox. Mail can create a linked task and return to the original message. Mail collection runs in the API process: IMAP IDLE detects arrivals, periodic checks and persisted cursors recover from disconnects, and a durable outbox delivers browser notifications. Recurring Todo tasks and Todo background reminders are not implemented.
 
 Existing editor and settings URLs are preserved: `/workflow-editor`, `/agents`, `/agent-builder`, `/settings/:section` and `/login`. `/settings` redirects to `/settings/general`; unsupported settings sections display the 404 page. Editor record parameters continue to work. Route titles use React 19's document metadata support.
 

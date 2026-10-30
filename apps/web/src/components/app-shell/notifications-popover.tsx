@@ -1,6 +1,6 @@
 import { TodoState } from "@/features/todos/components/todo-state"
 import { useState } from "react"
-import { Link } from "react-router"
+import { Link, useNavigate } from "react-router"
 import {
   BellIcon,
   CheckCheckIcon,
@@ -30,6 +30,13 @@ import { WorkbenchState } from "@/features/workbench/components"
 import { getNotifications } from "@/features/workbench/notifications"
 import { updateWorkbench, useWorkbench } from "@/features/workbench/store"
 import { useToday } from "@/features/todos/use-today"
+import {
+  loadMoreMailNotifications,
+  readMailNotifications,
+  readAllMailNotifications,
+  useMail,
+  loadMail,
+} from "@/features/mail/store"
 
 const ICONS = {
   todos: ListTodoIcon,
@@ -38,23 +45,41 @@ const ICONS = {
 }
 
 export function NotificationsPopover() {
+  const mail = useMail()
   const [open, setOpen] = useState(false)
+  const navigate = useNavigate()
   const { isMobile, setOpenMobile } = useSidebar()
   const { data, status } = useWorkbench()
   const today = useToday()
   const records = status === "ready" ? getNotifications(data, today) : []
-  const unread = records.filter((record) => record.unread).length
+  const unread =
+    records.filter((record) => record.unread && record.kind !== "mail").length +
+    (data.preferences.notifications.mail
+      ? (data.mailSummary?.notificationCount ??
+        records.filter((record) => record.unread && record.kind === "mail")
+          .length)
+      : 0)
   function close() {
     setOpen(false)
     if (isMobile) setOpenMobile(false)
   }
-  const markRead = (ids: string[]) =>
-    updateWorkbench((current) => ({
+  const markRead = async (ids: string[], all = false) => {
+    const remote = ids
+      .filter((id) => id.startsWith("mail-notice:"))
+      .map((id) => id.slice("mail-notice:".length))
+    if (all && data.mailSummary) {
+      if (!(await readAllMailNotifications())) return false
+    } else if (remote.length && !(await readMailNotifications(remote)))
+      return false
+    const localIds = ids.filter((id) => !id.startsWith("mail-notice:"))
+    if (!localIds.length) return true
+    return updateWorkbench((current) => ({
       ...current,
       notificationReadIds: [
-        ...new Set([...current.notificationReadIds, ...ids]),
+        ...new Set([...current.notificationReadIds, ...localIds]),
       ],
     }))
+  }
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -93,10 +118,11 @@ export function NotificationsPopover() {
               aria-label="全部标为已读"
               disabled={!unread}
               onClick={() =>
-                markRead(
+                void markRead(
                   records
                     .filter((record) => record.unread)
-                    .map((record) => record.id)
+                    .map((record) => record.id),
+                  true
                 )
               }
             >
@@ -115,6 +141,16 @@ export function NotificationsPopover() {
           </div>
         </div>
         <ScrollArea className="min-h-0 flex-1">
+          {mail.status === "error" && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => void loadMail()}
+            >
+              重试邮件通知
+            </Button>
+          )}
           <WorkbenchState>
             <TodoState>
               {records.length ? (
@@ -126,12 +162,12 @@ export function NotificationsPopover() {
                         <Link
                           to={record.href}
                           className="flex items-start gap-3 p-3 transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                          onClick={(event) => {
-                            if (record.unread && !markRead([record.id])) {
-                              event.preventDefault()
+                          onClick={async (event) => {
+                            event.preventDefault()
+                            if (record.unread && !(await markRead([record.id])))
                               return
-                            }
                             close()
+                            navigate(record.href)
                           }}
                         >
                           <Icon
@@ -191,6 +227,16 @@ export function NotificationsPopover() {
               )}
             </TodoState>
           </WorkbenchState>
+          {data.mailNotifications && data.mailNotifications.length >= 100 && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => void loadMoreMailNotifications()}
+            >
+              更早的邮件通知
+            </Button>
+          )}
         </ScrollArea>
       </PopoverContent>
     </Popover>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react"
 import { toast } from "sonner"
 import { useTodos } from "@/features/todos/store"
+import { useMail, syncMailAccount } from "@/features/mail/store"
 
 import { deleteFiles, getFile, putFiles, saveBlob } from "./local-files"
 import {
@@ -108,17 +109,32 @@ export const loadWorkbench = () => {
 export const useWorkbench = () => {
   const current = useSyncExternalStore(subscribe, () => snapshot)
   const todos = useTodos()
+  const mail = useMail()
   useEffect(() => {
     if (snapshot.status === "loading") loadWorkbench()
   }, [])
   const data = useMemo(
-    () => ({ ...current.data, ...todos.data }),
-    [current.data, todos.data]
+    () => ({
+      ...current.data,
+      ...todos.data,
+      accounts: mail.overview.accounts,
+      messages: mail.overview.messages,
+      mailSummary: mail.overview,
+      mailNotifications: mail.overview.notifications,
+      preferences: {
+        ...current.data.preferences,
+        notifications: {
+          ...current.data.preferences.notifications,
+          mail: mail.overview.notificationsEnabled,
+        },
+      },
+    }),
+    [current.data, todos.data, mail.overview]
   )
   return {
     ...current,
     data,
-    busyIds: [...current.busyIds, ...todos.busyIds],
+    busyIds: [...current.busyIds, ...todos.busyIds, ...mail.busyIds],
   }
 }
 
@@ -167,40 +183,23 @@ export const refreshConnection = async (
   kind: "mail" | "storage",
   id: string
 ) => {
+  if (kind === "mail") {
+    await syncMailAccount(id)
+    return
+  }
   if (snapshot.busyIds.includes(id)) return
   publish({ busyIds: [...snapshot.busyIds, id] })
   try {
     await new Promise((resolve) => window.setTimeout(resolve, 600))
     const now = new Date().toISOString()
-    const success = updateWorkbench((current) =>
-      kind === "mail"
-        ? {
-            ...current,
-            accounts: current.accounts.map((account) =>
-              account.id === id && account.status !== "paused"
-                ? {
-                    ...account,
-                    status: "connected",
-                    lastSync: now,
-                    error: null,
-                  }
-                : account
-            ),
-          }
-        : {
-            ...current,
-            connections: current.connections.map((connection) =>
-              connection.id === id && connection.status !== "paused"
-                ? {
-                    ...connection,
-                    status: "connected",
-                    lastSync: now,
-                    error: null,
-                  }
-                : connection
-            ),
-          }
-    )
+    const success = updateWorkbench((current) => ({
+      ...current,
+      connections: current.connections.map((connection) =>
+        connection.id === id && connection.status !== "paused"
+          ? { ...connection, status: "connected", lastSync: now, error: null }
+          : connection
+      ),
+    }))
     if (success) toast.success("连接状态已更新")
   } finally {
     publish({ busyIds: snapshot.busyIds.filter((value) => value !== id) })

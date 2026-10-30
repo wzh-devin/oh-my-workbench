@@ -100,6 +100,7 @@ export interface DataGridColumnCellEdit<TData> {
 
 export interface DataGridColumnMeta<TData> {
   headerTitle?: string
+  align?: "left" | "center"
   headerClassName?: string
   cellClassName?: string
   skeleton?: ReactNode

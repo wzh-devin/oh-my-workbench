@@ -1,185 +1,139 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react"
-import { Link, useNavigate, useSearchParams } from "react-router"
+import { useCallback, useMemo, useState } from "react"
+import { Link, useSearchParams } from "react-router"
 import { toast } from "sonner"
 import {
-  DownloadIcon,
   MailIcon,
+  ArchiveIcon,
+  CheckCheckIcon,
+  EllipsisIcon,
   PaperclipIcon,
   PlusIcon,
   RefreshCwIcon,
   StarIcon,
-  XIcon,
-  ListTodoIcon,
 } from "lucide-react"
-import type { ColumnDef } from "@tanstack/react-table"
+import type {
+  ColumnDef,
+  PaginationState,
+  SortingState,
+} from "@tanstack/react-table"
 import { Badge } from "@/components/reui/badge"
 import type { DataGridFeatures } from "@/components/reui/data-grid/data-grid"
-import { Filters } from "@/components/reui/filters/filters"
+import { RuleFilters } from "@/components/shared/rule-filters"
 import { createFilterQuery } from "@/components/reui/filters/filters-query"
-import type { FilterField } from "@/components/reui/filters/filters-types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetTitle,
-} from "@/components/ui/sheet"
-import {
-  SHEET_SHELL,
-  SHEET_FOOTER,
-} from "@/features/settings/components/sections/sheet-parts"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   WorkbenchNavigation,
   EmptyState,
   WorkbenchScreen,
 } from "@/features/workbench/components"
 import { ConnectionsTable } from "@/features/workbench/connections-table"
-import { ConnectionDialog } from "@/features/workbench/dialogs"
-import { EQUALITY_OPERATORS, matchesQuery } from "@/features/workbench/filters"
-import { saveBlob } from "@/features/workbench/local-files"
-import {
-  formatTime,
-  type MailAccount,
-  type Message,
-  type StorageConnection,
-} from "@/features/workbench/model"
 import { RecordHint, RecordsGrid } from "@/features/workbench/records-grid"
 import {
-  refreshConnection,
-  updateWorkbench,
-  useWorkbench,
-} from "@/features/workbench/store"
-import { createTodo, useTodos } from "@/features/todos/store"
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"
+import { mailFilterFields } from "./filter-fields"
+import { useMessagePage } from "../use-message-page"
+import { formatMailTime } from "../model"
+import { mailFilterRule } from "../filters"
+import type { Message } from "../model"
+import {
+  bulkMailMessages,
+  changeMailMessage,
+  loadMail,
+  syncMailAccount,
+  useMail,
+} from "../store"
+import { MailAccountDialog } from "./account-dialog"
+import { MailDetail } from "./mail-detail"
+import { MailProviderIcon } from "./mail-provider-icon"
 
-const FILTER_FIELDS: FilterField[] = [
-  {
-    id: "read",
-    label: "阅读状态",
-    type: "select",
-    operators: EQUALITY_OPERATORS,
-    options: [
-      { value: "unread", label: "未读" },
-      { value: "read", label: "已读" },
-    ],
-  },
-  {
-    id: "starred",
-    label: "星标",
-    type: "select",
-    operators: EQUALITY_OPERATORS,
-    options: [
-      { value: "yes", label: "有星标" },
-      { value: "no", label: "无星标" },
-    ],
-  },
-]
-
-/** 分类放入既有左侧导航，邮件详情沿用浮动抽屉。 */
+/** Query one server page; shared totals and account navigation use the complete overview. */
 export function Mail() {
-  const navigate = useNavigate()
-  const { data, busyIds } = useWorkbench()
-  const todoState = useTodos()
+  const mail = useMail()
+  const accounts = mail.overview.accounts
   const [params, setParams] = useSearchParams()
   const accountId = params.get("account") ?? "all"
-  const view = params.get("view") === "accounts" ? "accounts" : "inbox"
+  const syncing = accounts.some(
+    (account) =>
+      (accountId === "all" || account.id === accountId) &&
+      (account.syncing || mail.busyIds.includes(`sync:${account.id}`))
+  )
+  const view =
+    params.get("view") === "accounts"
+      ? "accounts"
+      : params.get("view") === "archived"
+        ? "archived"
+        : "inbox"
   const [search, setSearch] = useState("")
   const [query, setQuery] = useState(() => createFilterQuery())
-  const [configuring, setConfiguring] = useState<
-    MailAccount | StorageConnection | "new" | null
-  >(null)
-  const messages = useMemo(
-    () =>
-      data.messages
-        .filter(
-          (message) =>
-            (accountId === "all" || message.accountId === accountId) &&
-            `${message.subject} ${message.sender} ${message.address} ${message.preview}`
-              .toLowerCase()
-              .includes(search.toLowerCase()) &&
-            matchesQuery(query, {
-              read: message.read ? "read" : "unread",
-              starred: message.starred ? "yes" : "no",
-            })
+  const [configuring, setConfiguring] = useState<string | null>(null)
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 10,
+  })
+  const [sorting, setSorting] = useState<SortingState>([])
+  const rule = useMemo(() => mailFilterRule(query), [query])
+  const fields = useMemo(() => mailFilterFields(accounts), [accounts])
+  const sort =
+    sorting[0]?.id === "subject"
+      ? "subject"
+      : sorting[0]?.desc === false
+        ? "oldest"
+        : "newest"
+  const scope = {
+    accountId,
+    searchText: search,
+    filterQuery: rule,
+    page: pagination.pageIndex + 1,
+    pageSize: pagination.pageSize,
+    sort,
+    archived: view === "archived",
+  } as const
+  const resetPage = useCallback(
+    () => setPagination((current) => ({ ...current, pageIndex: 0 })),
+    []
+  )
+  const { result, status, retry } = useMessagePage(
+    scope,
+    mail.revision,
+    view !== "accounts" && mail.status === "ready",
+    resetPage,
+    mail.userId
+  )
+  const bulk = async (action: "read" | "archive-read") => {
+    try {
+      const filterQuery = mailFilterRule(query, true)
+      const saved = await bulkMailMessages({ ...scope, filterQuery }, action)
+      if (saved)
+        toast.success(
+          `已${action === "read" ? "标记已读" : "归档"} ${saved.affected} 封邮件`
         )
-        .sort((a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt)),
-    [accountId, data.messages, query, search]
-  )
-  const selected = data.messages.find(
-    (record) =>
-      record.id === params.get("message") &&
-      (accountId === "all" || record.accountId === accountId)
-  )
-  const [heldMessage, setHeldMessage] = useState(selected)
-  if (selected && selected !== heldMessage) setHeldMessage(selected)
-  const detail = selected ?? heldMessage
-  const linkedTask = data.todos.find(
-    (todo) => todo.source?.kind === "mail" && todo.source.id === detail?.id
-  )
-  /** 邮件来源由服务端在事务中查重，重复操作返回同一待办。 */
-  const convertToTask = async () => {
-    if (!detail) return
-    if (linkedTask) {
-      navigate(`/todos?task=${encodeURIComponent(linkedTask.id)}`)
-      return
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "请检查筛选条件")
     }
-    const title = detail.subject.trim().slice(0, 200) || "邮件待办"
-    const task = await createTodo({
-      title,
-      note: detail.body.slice(0, 2000),
-      source: { kind: "mail", id: detail.id, label: title },
-    })
-    if (task)
-      toast.success("待办已添加", {
-        action: {
-          label: "查看",
-          onClick: () => navigate(`/todos?task=${encodeURIComponent(task.id)}`),
-        },
-      })
   }
-  const selectedId = selected?.id
-  useEffect(() => {
-    if (selectedId)
-      updateWorkbench((current) =>
-        current.messages.some(
-          (record) => record.id === selectedId && !record.read
-        )
-          ? {
-              ...current,
-              messages: current.messages.map((record) =>
-                record.id === selectedId ? { ...record, read: true } : record
-              ),
-            }
-          : current
-      )
-  }, [selectedId])
-  const closeMessage = () => {
-    const next = new URLSearchParams(params)
-    next.delete("message")
-    setParams(next)
-  }
-  const visibleAccounts = data.accounts.filter(
-    (record) => accountId === "all" || record.id === accountId
-  )
-  const syncing = visibleAccounts.some((record) => busyIds.includes(record.id))
-  const refresh = () =>
-    visibleAccounts
-      .filter((record) => record.status !== "paused")
-      .forEach((record) => {
-        void refreshConnection("mail", record.id)
-      })
   const clearFilters = () => {
     setSearch("")
     setQuery(createFilterQuery())
-    setParams({})
+    resetPage()
+  }
+  const refresh = () => {
+    for (const account of accounts.filter(
+      (item) => item.enabled && (accountId === "all" || accountId === item.id)
+    ))
+      void syncMailAccount(account.id)
   }
   const columns: ColumnDef<DataGridFeatures, Message>[] = [
     {
       id: "starred",
       header: "星标",
       size: 52,
-      meta: { headerClassName: "text-center", cellClassName: "text-center" },
+      meta: { align: "center" },
       cell: ({ row }) => (
         <Button
           type="button"
@@ -187,15 +141,11 @@ export function Mail() {
           variant="ghost"
           aria-label={`${row.original.starred ? "取消星标" : "添加星标"}：${row.original.subject}`}
           aria-pressed={row.original.starred}
+          disabled={mail.busyIds.includes(row.original.id)}
           onClick={() =>
-            updateWorkbench((current) => ({
-              ...current,
-              messages: current.messages.map((record) =>
-                record.id === row.original.id
-                  ? { ...record, starred: !record.starred }
-                  : record
-              ),
-            }))
+            void changeMailMessage(row.original, {
+              starred: !row.original.starred,
+            })
           }
         >
           <StarIcon
@@ -215,7 +165,7 @@ export function Mail() {
       size: 160,
       cell: ({ row }) => (
         <span
-          className="block truncate text-sm font-normal"
+          className="block truncate text-sm"
           title={`${row.original.sender} <${row.original.address}>`}
         >
           {row.original.sender}
@@ -225,19 +175,19 @@ export function Mail() {
     {
       accessorKey: "subject",
       header: "邮件主题",
-      enableSorting: true,
       size: 320,
+      enableSorting: true,
       meta: { fillWidth: true },
       cell: ({ row }) => (
         <div className="flex min-w-0 items-center gap-1">
           <Link
             to={`?${new URLSearchParams({ ...Object.fromEntries(params), message: row.original.id })}`}
-            className="min-w-0 truncate text-sm font-normal underline-offset-4 outline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+            className="min-w-0 truncate text-sm underline-offset-4 hover:underline"
             title={row.original.subject}
           >
-            {row.original.subject}
+            {row.original.subject || "无主题"}
           </Link>
-          {row.original.preview.trim() && (
+          {row.original.preview && (
             <RecordHint label={`查看摘要：${row.original.subject}`}>
               {row.original.preview}
             </RecordHint>
@@ -251,10 +201,7 @@ export function Mail() {
       size: 120,
       cell: ({ row }) => (
         <span className="block truncate text-sm text-muted-foreground">
-          {
-            data.accounts.find((record) => record.id === row.original.accountId)
-              ?.name
-          }
+          {accounts.find((item) => item.id === row.original.accountId)?.name}
         </span>
       ),
     },
@@ -271,11 +218,11 @@ export function Mail() {
     {
       accessorKey: "receivedAt",
       header: "收件时间",
+      size: 200,
       enableSorting: true,
-      size: 120,
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground tabular-nums">
-          {formatTime(row.original.receivedAt)}
+          {formatMailTime(row.original.receivedAt)}
         </span>
       ),
     },
@@ -283,12 +230,12 @@ export function Mail() {
       id: "attachments",
       header: "附件",
       size: 80,
-      meta: { headerClassName: "text-center", cellClassName: "text-center" },
+      meta: { align: "center" },
       cell: ({ row }) =>
-        row.original.attachments.length > 0 ? (
+        row.original.attachmentCount ? (
           <span className="flex items-center justify-center gap-1 text-sm text-muted-foreground">
             <PaperclipIcon className="size-3.5" aria-hidden="true" />
-            {row.original.attachments.length}
+            {row.original.attachmentCount}
           </span>
         ) : (
           <span className="text-sm text-muted-foreground">—</span>
@@ -308,20 +255,23 @@ export function Mail() {
                 id: "all",
                 label: "收件箱",
                 icon: <MailIcon aria-hidden="true" />,
-                badge: data.messages.filter((message) => !message.read).length,
+                badge: mail.overview.unread,
+              },
+              {
+                id: "archived",
+                label: "归档",
+                icon: <ArchiveIcon aria-hidden="true" />,
               },
             ],
           },
           {
             id: "accounts",
             title: "邮箱",
-            items: data.accounts.map((account) => ({
+            items: accounts.map((account) => ({
               id: account.id,
               label: account.name,
-              icon: <MailIcon aria-hidden="true" />,
-              badge: data.messages.filter(
-                (message) => message.accountId === account.id && !message.read
-              ).length,
+              icon: <MailProviderIcon provider={account.provider} />,
+              badge: account.unread,
             })),
           },
           {
@@ -332,21 +282,30 @@ export function Mail() {
                 id: "accounts",
                 label: "邮箱账号",
                 icon: <MailIcon aria-hidden="true" />,
-                badge: data.accounts.length,
+                badge: accounts.length,
               },
             ],
           },
         ]}
-        activeItem={view === "accounts" ? "accounts" : accountId}
-        onItemChange={(id) =>
+        activeItem={
+          view === "accounts"
+            ? "accounts"
+            : view === "archived"
+              ? "archived"
+              : accountId
+        }
+        onItemChange={(id) => {
+          resetPage()
           setParams(
             id === "accounts"
               ? { view: "accounts" }
-              : id === "all"
-                ? {}
-                : { account: id }
+              : id === "archived"
+                ? { view: "archived" }
+                : id === "all"
+                  ? {}
+                  : { account: id }
           )
-        }
+        }}
       />
       <WorkbenchScreen
         title="邮箱"
@@ -359,7 +318,11 @@ export function Mail() {
               onClick={refresh}
               disabled={
                 syncing ||
-                !visibleAccounts.some((record) => record.status !== "paused")
+                !accounts.some(
+                  (item) =>
+                    item.enabled &&
+                    (accountId === "all" || item.id === accountId)
+                )
               }
             >
               <RefreshCwIcon aria-hidden="true" />
@@ -376,191 +339,156 @@ export function Mail() {
           </>
         }
       >
-        {view === "inbox" ? (
+        {mail.status === "loading" ? (
+          <div
+            className="flex flex-col gap-3"
+            role="status"
+            aria-label="正在读取邮箱"
+          >
+            {Array.from({ length: 6 }, (_, index) => (
+              <Skeleton key={index} className="h-9 w-full" />
+            ))}
+          </div>
+        ) : mail.status === "error" ? (
+          <EmptyState
+            title="邮箱加载失败"
+            action="重试"
+            onAction={() => void loadMail()}
+          />
+        ) : view === "accounts" ? (
+          <ConnectionsTable
+            kind="mail"
+            onEdit={(source) => setConfiguring(source.id)}
+            onAdd={() => setConfiguring("new")}
+          />
+        ) : (
           <RecordsGrid
             title={
-              data.accounts.find((account) => account.id === accountId)?.name ??
-              "收件箱"
+              view === "archived"
+                ? "归档"
+                : (accounts.find((item) => item.id === accountId)?.name ??
+                  "收件箱")
             }
             icon={<MailIcon className="size-4" aria-hidden="true" />}
-            records={messages}
+            records={result.messages}
             columns={columns}
+            loading={status === "loading"}
+            server={{
+              total: result.total,
+              pagination,
+              onPaginationChange: setPagination,
+              sorting,
+              onSortingChange: setSorting,
+            }}
+            leadingContent={
+              status === "error" && result.messages.length > 0 ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={retry}
+                >
+                  重试
+                </Button>
+              ) : undefined
+            }
             toolbar={
               <>
                 <Input
                   aria-label="搜索邮件"
                   placeholder="搜索主题、发件人…"
                   value={search}
-                  onChange={(event) => setSearch(event.target.value)}
+                  onChange={(event) => {
+                    setSearch(event.target.value)
+                    resetPage()
+                  }}
                   className="w-full sm:w-56"
                 />
-                <Filters
-                  fields={FILTER_FIELDS}
+                <RuleFilters
+                  fields={fields}
                   query={query}
-                  onQueryChange={setQuery}
-                  size="sm"
-                  labels={{ addFilter: "筛选" }}
+                  onQueryChange={(next) => {
+                    setQuery(next)
+                    resetPage()
+                  }}
+                  labels={{
+                    filtersLabel: "邮件规则",
+                    builderEmpty: "全部邮件",
+                    showRecords: "筛选邮件",
+                  }}
                 />
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="outline"
+                        aria-label="邮件功能"
+                      />
+                    }
+                  >
+                    <EllipsisIcon aria-hidden="true" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      disabled={
+                        !result.total || mail.busyIds.includes("messages:bulk")
+                      }
+                      onClick={() => void bulk("read")}
+                    >
+                      <CheckCheckIcon aria-hidden="true" />
+                      全部已读
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={
+                        !result.total ||
+                        view === "archived" ||
+                        mail.busyIds.includes("messages:bulk")
+                      }
+                      onClick={() => void bulk("archive-read")}
+                    >
+                      <ArchiveIcon aria-hidden="true" />
+                      归档已读邮件
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </>
             }
             empty={
               <EmptyState
-                title="这里还没有邮件"
-                action={data.accounts.length ? "查看全部邮件" : "添加邮箱"}
+                title={status === "error" ? "邮件加载失败" : "这里还没有邮件"}
+                action={
+                  status === "error"
+                    ? "重试"
+                    : accounts.length
+                      ? "清除筛选"
+                      : "添加邮箱"
+                }
                 onAction={
-                  data.accounts.length
-                    ? clearFilters
-                    : () => setConfiguring("new")
+                  status === "error"
+                    ? retry
+                    : accounts.length
+                      ? clearFilters
+                      : () => setConfiguring("new")
                 }
               />
             }
           />
-        ) : (
-          <ConnectionsTable
-            kind="mail"
-            onEdit={setConfiguring}
-            onAdd={() => setConfiguring("new")}
-          />
         )}
       </WorkbenchScreen>
-      <Sheet
-        open={!!selected}
-        onOpenChange={(open) => {
-          if (!open) closeMessage()
+      <MailDetail
+        key={mail.userId}
+        id={params.get("message")}
+        onClose={() => {
+          const next = new URLSearchParams(params)
+          next.delete("message")
+          setParams(next)
         }}
-      >
-        <SheetContent
-          className={SHEET_SHELL}
-          style={{ "--sheet-width": "760px" } as CSSProperties}
-          showCloseButton={false}
-        >
-          <div className="flex shrink-0 items-start justify-between gap-4 border-b px-5 py-4">
-            <div className="flex min-w-0 flex-col gap-2">
-              <SheetTitle>{detail?.subject ?? "邮件详情"}</SheetTitle>
-              <SheetDescription>
-                {detail?.sender} · {detail?.address}
-              </SheetDescription>
-            </div>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              aria-label="关闭邮件"
-              onClick={closeMessage}
-            >
-              <XIcon aria-hidden="true" />
-            </Button>
-          </div>
-          <ScrollArea className="min-h-0 flex-1">
-            {detail && (
-              <article className="flex flex-col gap-6 px-5 py-6">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline">
-                      {
-                        data.accounts.find(
-                          (record) => record.id === detail.accountId
-                        )?.name
-                      }
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {formatTime(detail.receivedAt)}
-                    </span>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    aria-pressed={detail.starred}
-                    onClick={() =>
-                      updateWorkbench((current) => ({
-                        ...current,
-                        messages: current.messages.map((record) =>
-                          record.id === detail.id
-                            ? { ...record, starred: !record.starred }
-                            : record
-                        ),
-                      }))
-                    }
-                  >
-                    <StarIcon aria-hidden="true" />
-                    {detail.starred ? "取消星标" : "添加星标"}
-                  </Button>
-                </div>
-                <p className="text-sm leading-7 wrap-anywhere whitespace-pre-wrap">
-                  {detail.body}
-                </p>
-                {detail.attachments.length > 0 && (
-                  <div className="flex flex-col gap-3 border-t pt-4">
-                    <p className="flex items-center gap-2 text-sm font-medium">
-                      <PaperclipIcon className="size-4" aria-hidden="true" />
-                      附件 · {detail.attachments.length}
-                    </p>
-                    {detail.attachments.map((attachment) => (
-                      <div
-                        key={attachment.name}
-                        className="flex min-w-0 items-center justify-between gap-3"
-                      >
-                        <span className="truncate text-sm">
-                          {attachment.name}
-                        </span>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            saveBlob(
-                              new Blob([attachment.content], {
-                                type: "text/plain;charset=utf-8",
-                              }),
-                              attachment.name
-                            )
-                          }
-                        >
-                          <DownloadIcon aria-hidden="true" />
-                          下载
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </article>
-            )}
-          </ScrollArea>
-          <div className={SHEET_FOOTER}>
-            <span className="mr-auto text-xs text-muted-foreground">
-              {detail
-                ? data.accounts.find((record) => record.id === detail.accountId)
-                    ?.email
-                : ""}
-            </span>
-            <Button
-              type="button"
-              size="sm"
-              onClick={convertToTask}
-              disabled={
-                todoState.status !== "ready" ||
-                todoState.busyIds.includes("task:create")
-              }
-            >
-              <ListTodoIcon aria-hidden="true" />
-              {linkedTask ? "查看待办" : "转为待办"}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={closeMessage}
-            >
-              关闭
-            </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
+      />
       {configuring && (
-        <ConnectionDialog
-          kind="mail"
-          source={configuring === "new" ? undefined : configuring}
+        <MailAccountDialog
+          source={accounts.find((account) => account.id === configuring)}
           onClose={() => setConfiguring(null)}
         />
       )}

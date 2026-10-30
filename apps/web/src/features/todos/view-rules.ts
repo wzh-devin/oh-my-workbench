@@ -34,23 +34,29 @@ export const DATE_PRESETS = [
   { value: "tomorrow", label: "明天" },
 ]
 
-/** 只有完整的可视化条件才能转换为通用规则，空根明确表示恒真。 */
-export const queryToRule = (query: FilterQuery): RuleDocument => {
-  const convert = (node: FilterNode, depth: number): RuleNode => {
+/** 保存时严格校验；列表预览跳过未填完的条件，避免编辑过程清空结果。 */
+export const queryToRule = (
+  query: FilterQuery,
+  strict = true
+): RuleDocument => {
+  const convert = (node: FilterNode, depth: number): RuleNode | null => {
     if (depth > limits.maxDepth) throw new Error("规则最多嵌套 9 层")
     if (node.type === "group") {
-      if (!node.rules.length) {
-        if (depth === 1) return { kind: "constant", value: true }
+      const children = node.rules
+        .map((child) => convert(child, depth + 1))
+        .filter((child): child is RuleNode => child !== null)
+      if (!children.length && strict && depth > 1)
         throw new Error("条件分组不能为空")
-      }
-      return {
-        kind: node.combinator === "or" ? "any" : "all",
-        children: node.rules.map((child) => convert(child, depth + 1)),
-      }
+      return children.length
+        ? { kind: node.combinator === "or" ? "any" : "all", children }
+        : null
     }
     const field = node.path.join(".")
-    if (!schema.facts[field] || !node.operator)
-      throw new Error("请补全条件和操作符")
+    if (!schema.facts[field]) throw new Error("请补全条件和操作符")
+    if (!node.operator) {
+      if (strict) throw new Error("请补全条件和操作符")
+      return null
+    }
     const args: Operand[] = [{ kind: "fact", path: field }]
     const empty = node.operator === "empty" || node.operator === "not_empty"
     const op = empty
@@ -61,8 +67,10 @@ export const queryToRule = (query: FilterQuery): RuleDocument => {
         ? "contains"
         : node.operator
     if (!empty) {
-      if (typeof node.value !== "string" || !node.value.trim())
+      if (typeof node.value !== "string" || !node.value.trim()) {
+        if (!strict && (node.value == null || node.value === "")) return null
         throw new Error("请填写完整的条件值")
+      }
       const value = node.value.trim()
       if (field === "text" && value.length > 200)
         throw new Error("匹配文本最多 200 字")
@@ -109,7 +117,10 @@ export const queryToRule = (query: FilterQuery): RuleDocument => {
       ? { kind: "not", child: condition }
       : condition
   }
-  const document: RuleDocument = { schemaVersion: 1, root: convert(query, 1) }
+  const document: RuleDocument = {
+    schemaVersion: 1,
+    root: convert(query, 1) ?? { kind: "constant", value: true },
+  }
   compileRule(document, schema, limits)
   return document
 }

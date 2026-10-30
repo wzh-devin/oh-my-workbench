@@ -15,7 +15,7 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
 import type { DataGridFeatures } from "@/components/reui/data-grid/data-grid"
 import { Badge } from "@/components/reui/badge"
-import { Filters } from "@/components/reui/filters/filters"
+import { RuleFilters } from "@/components/shared/rule-filters"
 import { createFilterQuery } from "@/components/reui/filters/filters-query"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -110,7 +110,10 @@ export function Todos() {
   const defaults = listId ? {} : viewTaskDefaults(currentView, today)
   const temporaryRule = useMemo(() => {
     try {
-      return { match: compileTodoRule(queryToRule(query), today), error: null }
+      return {
+        match: compileTodoRule(queryToRule(query, false), today),
+        error: null,
+      }
     } catch (error) {
       return {
         match: () => false,
@@ -315,7 +318,7 @@ export function Todos() {
       header: "操作",
       size: 80,
       enableResizing: false,
-      meta: { headerClassName: "text-center" },
+      meta: { align: "center" },
       cell: ({ row }) => (
         <div className="flex items-center justify-center gap-1">
           <TodoDatePicker
@@ -548,12 +551,11 @@ export function Todos() {
                     label="待办排序"
                   />
                 </div>
-                <Filters
+                <RuleFilters
                   fields={fields}
                   query={query}
                   onQueryChange={setQuery}
-                  size="default"
-                  labels={{ ...TODO_FILTER_LABELS, addFilter: "筛选" }}
+                  labels={TODO_FILTER_LABELS}
                 />
               </>
             }

@@ -29,7 +29,7 @@ import {
 } from "@/components/reui/data-grid/data-grid"
 import { DataGridScrollArea } from "@/components/reui/data-grid/data-grid-scroll-area"
 import { DataGridTable } from "@/components/reui/data-grid/data-grid-table"
-import { Filters } from "@/components/reui/filters/filters"
+import { RuleFilters } from "@/components/shared/rule-filters"
 import {
   createFilterQuery,
   createFilterRule,
@@ -103,7 +103,6 @@ import {
   type AgentTabId,
 } from "./data"
 import { AgentsEmptyState } from "./empty-state"
-import { FilterPlusIcon } from "./icons"
 
 type TableDensity = "compact" | "comfortable"
 type AgentViewMode = "table" | "card"
@@ -616,8 +615,8 @@ export function AgentsDataGridView({
   )
 
   const filteredRecords = useMemo(
-    () => applyAgentFilters(tabRecords, filters),
-    [filters, tabRecords]
+    () => applyAgentFilters(tabRecords, filterQuery),
+    [filterQuery, tabRecords]
   )
 
   // The page holds through a drawer edit. A new agent (a create or a copy)
@@ -1044,21 +1043,10 @@ export function AgentsDataGridView({
         {hasVisibleFilters ? (
           <>
             <div className="flex flex-col gap-2 bg-muted/40 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between lg:px-4">
-              <Filters
+              <RuleFilters
                 query={filterQuery}
                 fields={filterFields}
                 onQueryChange={handleFiltersChange}
-                size="default"
-                trigger={
-                  <Button
-                    type="button"
-                    size="icon-sm"
-                    variant="outline"
-                    aria-label="Add agent filter"
-                  >
-                    <FilterPlusIcon className="size-4" aria-hidden="true" />
-                  </Button>
-                }
               />
 
               <Button

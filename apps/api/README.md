@@ -74,6 +74,7 @@ internal/
   modules/
     auth/                   认证：routes、handler、service、repository、model、dto、errors
     todos/                  待办：清单、步骤、日期、标签、来源和旧数据导入
+    mail/                   邮箱：账号、只读收信、通知、推送和后台监听
   platform/
     database/               PostgreSQL 连接
     cache/                  Redis 连接
@@ -102,6 +103,67 @@ migrations/
 `app/router.go` 只创建 Gin、安装公共中间件、组装依赖并挂载模块。具体接口放在模块的 `routes.go`，通过 `Handler.RegisterRoutes(*gin.RouterGroup)` 注册；Todo 挂载到带会话校验的 `/api/todos` 分组。
 
 Handler 负责 HTTP 协议；Service 负责业务校验和流程编排；所有 SQL/GORM 及 Redis 读写必须放在 Repository 文件。事务和用户行锁由 Repository 提供，Service 在事务内调用仓储方法。禁止在 Service 中声明 Repository 方法来绕过文件边界。
+
+## 邮箱与来信通知
+
+支持 QQ、Gmail 的 INBOX；用户填写显示名称、完整邮箱地址、QQ 授权码或 Gmail 应用专用密码。主机分别为 imap.qq.com / imap.gmail.com，端口 993，强制校验证书的 TLS。Gmail 应用密码要求账号支持并开启两步验证；本轮不包含 OAuth、自定义服务器、发信或远端删除。
+
+首次部署在 apps/api 中运行下列命令，将输出的三项密钥保存到未跟踪的 .env，并设置 WEB_PUSH_SUBJECT（如 mailto:admin@example.com）：
+
+~~~sh
+go run ./cmd/mailkeys
+~~~
+
+MAIL_ENCRYPTION_KEY 是 Base64 编码的 32 字节 AES-GCM 密钥；WEB_PUSH_VAPID_PUBLIC_KEY / PRIVATE_KEY 是 Web Push 身份。所有实例使用同一组值，重启不得重新生成。备份这些密钥；丢失邮箱加密密钥后需要重新输入各邮箱授权凭证。Goose 启动时应用新增迁移，已有迁移不修改。未配置密钥时原认证/Todo继续工作，添加/同步邮箱或开启推送返回明确配置错误。
+
+后台与网页生命周期独立。账号启用后每实例每5秒协调监听租约；每账号只有一个有效监听者，每10秒续租，失效或暂停后旧事务拒绝写入。优先采用 IMAP IDLE，每5分钟退出并补查；不支持 IDLE 时每60秒检查。网络错误按2、4、8…60秒退避重连，服务重启根据持久化游标补拉。手动同步复用同一个队列与监听者。
+
+初始化先记录 UIDVALIDITY / UIDNEXT 边界，历史回填与实时增量分离，每批最多100封且新信优先。历史回填不产生新信通知。邮件、附件元数据、通知、投递任务和游标同事务提交，失败可重放；唯一键阻止重复邮件和通知。UIDVALIDITY变化后建立当前代次索引，旧缓存保留且不混入普通列表。
+
+列表只返回邮件头并由服务端分页、搜索、排序；筛选复用通用规则文档，保留 AND/OR/NOT，允许阅读/星标/附件布尔值、发件人/地址/主题文本、来源邮箱等值和收件时间比较。正文按需缓存文本与原始 HTML v2（解码前后上限8MiB），HTML 优先于 MIME 的纯文本备选；前端用 DOMPurify 清理，再由 sandbox iframe 和 CSP 隔离。命中任何版本的正文缓存都立即返回；旧缓存异步升级，单消费者、32条排队上限、同邮件去重、每次最长45秒，退出时取消，失败保留原文供下次重试。首次无缓存才同步访问远端。附件不存二进制，通过已鉴权的邮件与MIME部件定位流式下载；未缓存内容依赖远端邮件仍可访问。BODY.PEEK与只读选择不修改原邮箱，工作台阅读/星标独立保存并使用version防止覆盖。
+
+同步邮件头使用 `BODY.PEEK[HEADER]` 读取完整头部，经已安装的 go-message 解析后复用原消息/附件映射，不依赖厂商生成的 `ENVELOPE` 字符串，也不使用可能返回空内容的 `HEADER.FIELDS` 投影。地址解析后再解码引号内的 MIME 显示名称，支持 UTF-8、GBK 等已有字符集。UID、INTERNALDATE、FLAGS、RFC822.SIZE 与 BODYSTRUCTURE 继续在同一次 FETCH 中读取；每批100封、游标提交与失败保留规则不变，不跳过邮件。完整原始头不会返回前端或写入日志。
+
+所有接口安装现有会话校验，身份只能取服务端；JSON业务ID为字符串，复用code/message/data信封：
+
+| 方法 | /api/mail 下的路径 | 用途 |
+| --- | --- | --- |
+| GET / POST | /accounts | 列表 / 验证并添加 |
+| PATCH | /accounts/:id | 名称、凭证、自动同步、来信通知；携带version |
+| POST | /accounts/:id/sync | 202返回已有或新建同步任务 |
+| GET | /sync-jobs/:id | 任务状态与处理数量 |
+| POST | /messages/query | accountId/searchText/filterQuery/page/pageSize/sort/archived/afterId |
+| POST | /messages/bulk | 同列表筛选范围，action 为 read 或 archive-read；返回 affected |
+| GET / PATCH | /messages/:id | 详情 / 阅读星标、归档恢复与version |
+| GET | /attachments/:id/download | 安全附件下载 |
+| GET | /overview | 全量计数、按上海日期聚合的活动、最近100封邮件头与通知 |
+| GET | /events | SSE失效通知；重连读取数据库状态 |
+| GET | /notifications?before=:id | 每页100条，before为上一页末尾ID |
+| PATCH | /notifications/read | ids数组或all:true；通知已读独立于邮件已读 |
+| PUT | /preferences | enabled控制全局邮件通知 |
+| GET | /push/config | 公开VAPID公钥和邮箱配置状态 |
+| POST / DELETE | /push/subscriptions | 注册 / 解绑当前浏览器订阅 |
+
+查询例：POST /api/mail/messages/query，提交 {"accountId":"all","searchText":"项目","page":1,"pageSize":20,"sort":"newest"}。返回 {"code":0,"message":"success","data":{"messages":[],"total":0}}。pageSize最多100，sort为newest/oldest/subject；filterQuery采用共享schemaVersion:1规则。PATCH邮件提交 {"version":1,"read":true}；陈旧版本409，越权记录404。
+
+数据库字段、默认值和索引见 migrations/20261030120000_mail.sql：
+
+| 表 | 职责与关键索引 |
+| --- | --- |
+| omw_mail_account | 账号、密文、开关、版本、连接状态、监听租约；用户＋小写邮箱唯一 |
+| omw_mail_mailbox | INBOX代次、历史边界/游标、实时游标；账号＋文件夹唯一 |
+| omw_mail_message | 邮件头、正文缓存、本地状态；文件夹＋UIDVALIDITY＋UID唯一，用户/账号/收信时间索引 |
+| omw_mail_attachment | MIME部件与文件名/类型/传输编码/大小；邮件＋部件唯一 |
+| omw_mail_sync_job | 同步来源、状态、计数与错误；每账号最多一个queued/running任务 |
+| omw_mail_notification | 来信事件与通知已读；用户＋邮件唯一 |
+| omw_push_subscription | 浏览器endpoint、公钥、auth及绑定用户；endpoint唯一 |
+| omw_mail_push_delivery | 按订阅投递、租约、重试；通知＋订阅唯一，待处理时间部分索引 |
+
+Web Push由两条后台消费者领取数据库任务，失败指数退避，最多10次；404/410停用失效订阅。投递至少一次，通知使用稳定tag收敛重复显示，不承诺网络端到端exactly-once。站内SSE仅刷新状态，避免与系统推送重复弹通知。payload不携带主题、发件人或正文，打开后仍须登录。现有通知设置保存到服务端，关闭时取消待发任务；退出登录先解绑当前浏览器，不影响其他设备。
+
+生产必须使用 HTTPS，浏览器仅在用户点击“开启系统通知”后请求授权。Service Worker 路径 /mail-worker.js，作用域 /，不缓存API或邮件；反向代理应关闭 /api/mail/events 的缓冲。网页关闭后仍可接收推送，浏览器退出、休眠、系统勿扰或推送网络受限时不保证即时到达。服务器需要能访问对应IMAP及浏览器推送服务，Gmail或部分推送服务的网络可达性需在实际部署环境验证。
+
+IMAP 默认直连，不读取桌面系统代理。需要代理时配置 `MAIL_PROXY_URL=socks5h://127.0.0.1:7890`（也支持 `socks5://`）并重启 API；留空恢复直连。该配置统一覆盖账号验证、正文读取、附件下载和后台同步，不影响 Web Push 的 HTTP 传输。代理不可用时明确报错，不回退直连。拨号总上限15秒，最多1秒解析本地候选地址，以250ms间隔竞争 TLS 连接，始终校验 QQ/Gmail 厂商域名证书；未胜出的连接和请求取消后的连接及时关闭。无效代理配置在启动时失败，错误不包含代理凭证。
 
 ## Todo
 
@@ -135,3 +197,12 @@ Handler 负责 HTTP 协议；Service 负责业务校验和流程编排；所有 
 优先级提交 `{priorities:[{value,name,color,version},...]}`，必须包含稳定 `value=1..4` 各一次，数组下标为排序。名称各不相同、最多 24 字；颜色为不透明 `#RRGGBB`，返回时规范为小写，读取兼容既有颜色标识。修改名称、颜色和顺序不重写任务与规则引用。旧版本或任意一行失败时整批回滚。
 
 首版按个人工作台规模批量读取完整快照；任务达到万级或响应超出预算时需升级服务端分页。两次增量迁移分别创建任务三表和配置两表，不修改旧表；回滚代码时保留已写入业务表。
+
+
+邮箱列表首次加载显示骨架，SSE、焦点恢复与轮询触发的后台刷新保留当前数据。共享 RecordsGrid 根据实际行高、表头、页脚与视口计算默认页容量（1–100），骨架行不参与测量；手动选择 10/15/30/50/100 后不再自适应，自动值也保留在选择器中。
+
+归档是工作台状态：收件箱排除已归档记录，归档目录可打开并移回收件箱，IMAP 原信不变。全部已读、归档已读邮件作用于当前账号、搜索、规则和归档视图的全部匹配项，不受页码或每页条数限制；一条集合 UPDATE 同时递增版本，仅更新需要改变状态的记录。已收到的通知回执保持独立。
+
+新增迁移 `20261030140000_mail_views.sql` 需要数据库有创建受信扩展 `pg_trgm` 的权限。索引覆盖用户/归档/时间、用户/账号/归档/时间、覆盖汇总所需列的紧凑索引，以及发件人、地址、主题的 GIN trigram 查询；所有条件均绑定参数，规则限制 8 层/128 节点/8KiB。普通搜索忽略大小写，详细规则中的文本比较遵守通用引擎的大小写敏感语义。
+
+查询返回 `nextAfter`；相邻下一页带 `afterId`，按时间+ID复合键定位，旧客户端不传时继续按页码 OFFSET 查询。主题排序也保留稳定 ID 次序。直接跳到未访问的深页及全量精确 COUNT 仍随匹配规模增长；少于3字符的任意子串不保证有效利用 trigram 索引。列表与总数在同一只读快照内返回，正文不进入分页响应。HTML 的 HTTP(S) 图片随详情自动加载，CID 内嵌图片暂不解析，链接通过显式点击打开独立页面。

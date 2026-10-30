@@ -1,4 +1,6 @@
 import type { FilterCondition } from "@/components/reui/filters/filters-query"
+import type { FilterQuery } from "@/components/reui/filters/filters-types"
+import { matchesFilterQuery } from "@/lib/filter-query"
 
 import { getWorkflowSearchBlob, type WorkflowItem } from "./data"
 
@@ -88,26 +90,22 @@ function matchWorkflowFilterValue(
   }
 }
 
+/** 直接读取规则树，避免高级筛选的分组被展平为 AND。 */
 export function applyWorkflowFilters(
   data: WorkflowItem[],
-  filters: FilterCondition[]
+  filters: FilterCondition[] | FilterQuery
 ) {
-  return getActiveFilters(filters).reduce((result, filter) => {
-    const { field, operator, values, negated } = filter
-
-    return result.filter((item) => {
+  return data.filter((item) =>
+    matchesFilterQuery(filters, (filter) => {
+      if (!getActiveFilters([filter]).length) return undefined
+      const { field, operator, values, negated } = filter
       const matched = matchWorkflowFilterValue(
         filterFieldValues(item, field),
         operator,
         values
       )
-
-      if (matched === null) return true
-
-      // The chip menu negates in place whenever the operator declares no
-      // inverse to swap to ("starts with", "ends with"), so the row test has to
-      // flip with it.
+      if (matched === null) return undefined
       return negated ? !matched : matched
     })
-  }, data)
+  )
 }

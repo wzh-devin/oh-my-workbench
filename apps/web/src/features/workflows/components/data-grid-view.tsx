@@ -8,7 +8,7 @@ import {
 } from "@/components/reui/data-grid/data-grid"
 import { DataGridScrollArea } from "@/components/reui/data-grid/data-grid-scroll-area"
 import { DataGridTable } from "@/components/reui/data-grid/data-grid-table"
-import { Filters } from "@/components/reui/filters/filters"
+import { RuleFilters } from "@/components/shared/rule-filters"
 import {
   createFilterQuery,
   createFilterRule,
@@ -92,7 +92,6 @@ import {
 } from "./data"
 import { WorkflowsEmptyState } from "./empty-state"
 import { applyWorkflowFilters, getActiveFilters } from "./filter-workflows"
-import { FilterPlusIcon } from "./icons"
 import {
   CalendarClockIcon,
   CheckIcon,
@@ -613,8 +612,8 @@ export function WorkflowsDataGridView({
   )
 
   const filteredRecords = useMemo(
-    () => applyWorkflowFilters(tabRecords, filters),
-    [filters, tabRecords]
+    () => applyWorkflowFilters(tabRecords, filterQuery),
+    [filterQuery, tabRecords]
   )
 
   const ownerFilterOptions = useMemo<FilterOption<WorkflowFilterValue>[]>(
@@ -1036,21 +1035,10 @@ export function WorkflowsDataGridView({
         {hasVisibleFilters ? (
           <>
             <div className="flex flex-col gap-2 bg-muted/40 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between">
-              <Filters
+              <RuleFilters
                 query={filterQuery}
                 fields={workflowFilterFields}
                 onQueryChange={handleFiltersChange}
-                size="default"
-                trigger={
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="outline"
-                    aria-label="Add workflow filter"
-                  >
-                    <FilterPlusIcon className="size-4" aria-hidden="true" />
-                  </Button>
-                }
               />
 
               <Button

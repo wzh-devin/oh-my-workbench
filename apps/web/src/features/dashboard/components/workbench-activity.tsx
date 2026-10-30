@@ -31,6 +31,8 @@ export const workbenchActivity = (data: Workbench) => {
     ...data.messages.map((record) => record.receivedAt),
     ...assets.map((record) => record.createdAt),
   ]
+  if (data.mailSummary?.latestReceivedAt)
+    timestamps.push(data.mailSummary.latestReceivedAt)
   const latest = timestamps.length
     ? Math.max(...timestamps.map((value) => new Date(value).getTime()))
     : Date.parse("2026-10-25T12:00:00+08:00")
@@ -46,9 +48,11 @@ export const workbenchActivity = (data: Workbench) => {
       todos: data.todos.filter(
         (record) => dayFormat.format(new Date(record.createdAt)) === day
       ).length,
-      mail: data.messages.filter(
-        (record) => dayFormat.format(new Date(record.receivedAt)) === day
-      ).length,
+      mail:
+        data.mailSummary?.daily[day] ??
+        data.messages.filter(
+          (record) => dayFormat.format(new Date(record.receivedAt)) === day
+        ).length,
       assets: assets.filter(
         (record) => dayFormat.format(new Date(record.createdAt)) === day
       ).length,
@@ -73,7 +77,7 @@ export function WorkbenchActivity({
       </SectionHeader>
       <CardContent className="flex flex-col gap-3 py-4">
         {data.todos.length +
-        data.messages.length +
+        (data.mailSummary?.total ?? data.messages.length) +
         activeAssets(data).length ? (
           <>
             <ChartContainer config={CONFIG} className="aspect-auto h-56 w-full">

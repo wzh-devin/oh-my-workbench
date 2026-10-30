@@ -2,7 +2,10 @@
 
 import { useCallback, useMemo, useState } from "react"
 import { useNavigate } from "react-router"
-import { Badge } from "@/components/reui/badge"
+import { RuleFilters } from "@/components/shared/rule-filters"
+import { createFilterQuery } from "@/components/reui/filters/filters-query"
+import type { FilterField } from "@/components/reui/filters/filters-types"
+import { EQUALITY_OPERATORS, matchesQuery } from "@/features/workbench/filters"
 import {
   DataGrid,
   dataGridFeatures,
@@ -22,7 +25,6 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   CircleCheckIcon,
-  FilterIcon,
   FlagIcon,
   SearchIcon,
   WorkflowIcon,
@@ -35,12 +37,9 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -68,6 +67,16 @@ const sortLabels: Record<WorkflowSort, string> = {
 }
 
 const EMPTY_MESSAGE = "No workflows match the selected filters."
+
+const FILTER_FIELDS: FilterField[] = [
+  {
+    id: "status",
+    label: "Status",
+    type: "multiselect",
+    operators: EQUALITY_OPERATORS,
+    options: WORKFLOW_STATUS_OPTIONS.map((value) => ({ value, label: value })),
+  },
+]
 
 const SUCCESS_ICON = (
   <CircleCheckIcon className="size-4 text-success" aria-hidden="true" />
@@ -119,7 +128,7 @@ export function WorkflowsDataGridView({
 }) {
   const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState("")
-  const [selectedStatuses, setSelectedStatuses] = useState<WorkflowStatus[]>([])
+  const [filterQuery, setFilterQuery] = useState(createFilterQuery)
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: PAGE_SIZES[0],
@@ -130,11 +139,12 @@ export function WorkflowsDataGridView({
   )
 
   const filteredWorkflows = useMemo(
-    () => filterWorkflows(workflows, searchQuery, selectedStatuses),
-    [workflows, searchQuery, selectedStatuses]
+    () =>
+      filterWorkflows(workflows, searchQuery, []).filter((workflow) =>
+        matchesQuery(filterQuery, { status: workflow.status })
+      ),
+    [workflows, searchQuery, filterQuery]
   )
-
-  const activeFilterCount = selectedStatuses.length
 
   const resetPagination = useCallback(() => {
     setPagination((current) => ({
@@ -146,20 +156,6 @@ export function WorkflowsDataGridView({
   const handleSearchChange = useCallback(
     (value: string) => {
       setSearchQuery(value)
-      resetPagination()
-    },
-    [resetPagination]
-  )
-
-  const handleStatusToggle = useCallback(
-    (status: WorkflowStatus, checked: boolean) => {
-      setSelectedStatuses((current) => {
-        if (checked) {
-          return current.includes(status) ? current : [...current, status]
-        }
-
-        return current.filter((item) => item !== status)
-      })
       resetPagination()
     },
     [resetPagination]
@@ -201,6 +197,7 @@ export function WorkflowsDataGridView({
         const copy: WorkflowRecord = {
           ...workflow,
           // The ID timestamp is created only by the duplicate action, never during render.
+          // Date.now 仅在复制事件中生成本地副本 ID，不在渲染时读取时钟。
           id: `${workflow.id}_${Date.now().toString(36)}`,
           name: `${workflow.name} copy`,
           slug: `${workflow.slug}-copy`,
@@ -371,52 +368,14 @@ export function WorkflowsDataGridView({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <DropdownMenu modal={false}>
-              <DropdownMenuTrigger
-                render={
-                  <Button type="button" variant="outline">
-                    <FilterIcon data-icon="inline-start" aria-hidden="true" />
-                    Filters
-                    {activeFilterCount > 0 ? (
-                      <Badge variant="outline" radius="full">
-                        {activeFilterCount}
-                      </Badge>
-                    ) : null}
-                  </Button>
-                }
-              />
-              <DropdownMenuContent align="end" className="min-w-48">
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>Status</DropdownMenuLabel>
-                  {WORKFLOW_STATUS_OPTIONS.map((status) => (
-                    <DropdownMenuCheckboxItem
-                      key={status}
-                      checked={selectedStatuses.includes(status)}
-                      closeOnClick={false}
-                      onCheckedChange={(checked) =>
-                        handleStatusToggle(status, checked === true)
-                      }
-                    >
-                      {status}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                </DropdownMenuGroup>
-                {activeFilterCount > 0 ? (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      closeOnClick={false}
-                      onClick={() => {
-                        setSelectedStatuses([])
-                        resetPagination()
-                      }}
-                    >
-                      Reset filters
-                    </DropdownMenuItem>
-                  </>
-                ) : null}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <RuleFilters
+              fields={FILTER_FIELDS}
+              query={filterQuery}
+              onQueryChange={(query) => {
+                setFilterQuery(query)
+                resetPagination()
+              }}
+            />
           </div>
         </div>
 

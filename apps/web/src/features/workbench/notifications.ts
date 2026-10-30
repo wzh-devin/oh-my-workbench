@@ -14,7 +14,9 @@ export function getNotifications(
   data: Workbench,
   today: string
 ): WorkbenchNotification[] {
-  const records: Omit<WorkbenchNotification, "unread">[] = []
+  const records: (Omit<WorkbenchNotification, "unread"> & {
+    unread?: boolean
+  })[] = []
   const enabled = data.preferences.notifications
   if (enabled.connections) {
     for (const [kind, sources] of [
@@ -54,21 +56,33 @@ export function getNotifications(
     }
   }
   if (enabled.mail) {
-    for (const message of data.messages
-      .filter((record) => !record.read)
-      .sort((a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt))) {
-      records.push({
-        id: `mail:${message.id}:${message.receivedAt}`,
-        kind: "mail",
-        title: "未读邮件",
-        body: message.subject,
-        href: `/mail?message=${encodeURIComponent(message.id)}`,
-      })
+    if (data.mailNotifications) {
+      for (const notification of data.mailNotifications)
+        records.push({
+          id: `mail-notice:${notification.id}`,
+          kind: "mail",
+          title: "收到邮件",
+          body: notification.subject,
+          href: `/mail?message=${encodeURIComponent(notification.messageId)}`,
+          unread: notification.readAt === null,
+        })
+    } else {
+      for (const message of data.messages
+        .filter((record) => !record.read)
+        .sort((a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt))) {
+        records.push({
+          id: `mail:${message.id}:${message.receivedAt}`,
+          kind: "mail",
+          title: "未读邮件",
+          body: message.subject,
+          href: `/mail?message=${encodeURIComponent(message.id)}`,
+        })
+      }
     }
   }
   const readIds = new Set(data.notificationReadIds)
   return records.map((record) => ({
     ...record,
-    unread: !readIds.has(record.id),
+    unread: record.unread ?? !readIds.has(record.id),
   }))
 }

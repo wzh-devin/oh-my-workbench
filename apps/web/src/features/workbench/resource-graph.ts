@@ -33,7 +33,7 @@ export const buildResourceGraph = (
       resources: data.accounts.map((account) => ({
         title: account.name,
         description: `${account.provider} · ${account.email}`,
-        detail: `${data.messages.filter((record) => record.accountId === account.id && !record.read).length} 封未读 · ${formatTime(account.lastSync)}`,
+        detail: `${data.mailSummary?.accounts.find((item) => item.id === account.id)?.unread ?? data.messages.filter((record) => record.accountId === account.id && !record.read).length} 封未读 · ${formatTime(account.lastSync)}`,
         status: account.status,
         kind: "mail",
         href: `/mail?account=${encodeURIComponent(account.id)}`,

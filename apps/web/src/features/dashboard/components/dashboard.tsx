@@ -32,6 +32,8 @@ import { sortTasks } from "@/features/todos/task-rules"
 
 import { updateTodo } from "@/features/todos/store"
 import { TodoState } from "@/features/todos/components/todo-state"
+import { useMail, loadMail } from "@/features/mail/store"
+import { Skeleton } from "@/components/ui/skeleton"
 
 type RecentRecord = {
   id: string
@@ -47,6 +49,7 @@ type RecentRecord = {
 /** 保留原 Dashboard 的四指标、活动/待处理区与底部主列表，只替换业务内容。 */
 export function Dashboard() {
   const { data, busyIds } = useWorkbench()
+  const mail = useMail()
   const navigate = useNavigate()
   const [kind, setKind] = useState("all")
   const [search, setSearch] = useState("")
@@ -56,7 +59,10 @@ export function Dashboard() {
     "due",
     data.todoPriorities
   )
-  const unread = data.messages.filter((record) => !record.read)
+  const unread =
+    data.mailSummary?.unread ??
+    data.messages.filter((record) => !record.read).length
+  const mailTotal = data.mailSummary?.total ?? data.messages.length
   const connections = [
     ...data.accounts.map((record) => ({
       ...record,
@@ -255,10 +261,22 @@ export function Dashboard() {
             icon={<MailIcon aria-hidden="true" />}
             title="未读邮件"
             period="QQ / Gmail"
-            value={String(unread.length)}
+            value={
+              mail.status === "loading" ? (
+                <Skeleton className="h-8 w-20" />
+              ) : mail.status === "error" ? (
+                "—"
+              ) : (
+                String(unread)
+              )
+            }
             delta={null}
-            basis={`${data.accounts.length} 个账号 · ${data.messages.length} 封邮件`}
-            action={{ label: "打开收件箱", onClick: () => navigate("/mail") }}
+            basis={`${data.accounts.length} 个账号 · ${mailTotal} 封邮件`}
+            action={{
+              label: mail.status === "error" ? "重试" : "打开收件箱",
+              onClick: () =>
+                mail.status === "error" ? void loadMail() : navigate("/mail"),
+            }}
           >
             <SegmentBar
               label="邮件阅读状态"
@@ -266,13 +284,13 @@ export function Dashboard() {
                 {
                   key: "unread",
                   label: "未读",
-                  count: unread.length,
+                  count: unread,
                   tone: "bg-primary",
                 },
                 {
                   key: "read",
                   label: "已读",
-                  count: data.messages.length - unread.length,
+                  count: mailTotal - unread,
                   tone: "bg-muted-foreground/30",
                 },
               ]}

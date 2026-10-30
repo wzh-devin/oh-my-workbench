@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { todoSchema } from "@/features/todos/model"
+import type { MailOverview, MailNotification } from "@/features/mail/model"
 export { todoSchema } from "@/features/todos/model"
 
 const timestamp = z
@@ -160,7 +161,10 @@ export const workbenchSchema = z
     })
   }, "文件目录无效或包含循环关联")
 
-export type Workbench = z.infer<typeof workbenchSchema>
+export type Workbench = z.infer<typeof workbenchSchema> & {
+  mailSummary?: MailOverview
+  mailNotifications?: MailNotification[]
+}
 export type Todo = Workbench["todos"][number]
 export type MailAccount = Workbench["accounts"][number]
 export type Message = Workbench["messages"][number]

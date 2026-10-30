@@ -1,5 +1,11 @@
-import { useTable, type ColumnDef } from "@tanstack/react-table"
-import { useId, type ReactNode } from "react"
+import {
+  useTable,
+  type ColumnDef,
+  type PaginationState,
+  type SortingState,
+  type OnChangeFn,
+} from "@tanstack/react-table"
+import { useId, useRef, useState, type ReactNode } from "react"
 import { CircleHelpIcon } from "lucide-react"
 import { cn } from "cn"
 import {
@@ -19,6 +25,8 @@ import { DataGridScrollArea } from "@/components/reui/data-grid/data-grid-scroll
 import { DataGridTable } from "@/components/reui/data-grid/data-grid-table"
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { DataGridPagination } from "@/features/dashboard/components/data-grid-pagination"
+
+import { useGridPageSize, resizeGridPage } from "./use-grid-page-size"
 
 export function RecordHint({
   label,
@@ -65,6 +73,8 @@ export function RecordsGrid<T extends object>({
   title = "记录",
   icon,
   leadingContent,
+  server,
+  loading = false,
 }: {
   records: T[]
   columns: ColumnDef<DataGridFeatures, T>[]
@@ -73,21 +83,41 @@ export function RecordsGrid<T extends object>({
   title?: string
   icon?: ReactNode
   leadingContent?: ReactNode
+  loading?: boolean
+  server?: {
+    total: number
+    pagination: PaginationState
+    onPaginationChange: OnChangeFn<PaginationState>
+    sorting: SortingState
+    onSortingChange: OnChangeFn<SortingState>
+  }
 }) {
+  const container = useRef<HTMLDivElement>(null)
+  const [localPage, setLocalPage] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 10,
+  })
+  const pagination = server?.pagination ?? localPage
+  const setPagination = server?.onPaginationChange ?? setLocalPage
+  const markManualPageSize = useGridPageSize(
+    container,
+    (size) => setPagination((current) => resizeGridPage(current, size)),
+    loading
+  )
   const table = useTable({
     features: dataGridFeatures,
     data: records,
     defaultColumn: { enableResizing: false, enableSorting: false },
     columns: columns.map<ColumnDef<DataGridFeatures, T>>((definition) => {
-      const centered = !definition.meta?.fillWidth
+      const centered = definition.meta?.align === "center"
       const meta = {
         ...definition.meta,
         headerClassName: cn(
-          definition.meta?.headerClassName,
-          centered ? "text-center" : "text-left"
+          centered ? "text-center" : "text-left",
+          definition.meta?.headerClassName
         ),
         cellClassName: cn(
-          centered && "text-center",
+          centered ? "text-center" : "text-left",
           definition.meta?.cellClassName
         ),
       }
@@ -115,14 +145,28 @@ export function RecordsGrid<T extends object>({
         ),
       }
     }),
-    initialState: { pagination: { pageIndex: 0, pageSize: 10 } },
+    state: { pagination, ...(server ? { sorting: server.sorting } : {}) },
+    onPaginationChange: (next) => {
+      const value = typeof next === "function" ? next(pagination) : next
+      if (value.pageSize !== pagination.pageSize) markManualPageSize()
+      setPagination(value)
+    },
+    ...(server
+      ? {
+          manualPagination: true,
+          manualSorting: true,
+          rowCount: server.total,
+          onSortingChange: server.onSortingChange,
+        }
+      : {}),
     getRowId: (row, index) => ("id" in row ? String(row.id) : String(index)),
   })
   return (
     <TooltipProvider>
       <DataGrid
         table={table}
-        recordCount={records.length}
+        recordCount={server?.total ?? records.length}
+        isLoading={loading}
         emptyMessage={empty}
         tableLayout={{
           dense: true,
@@ -150,7 +194,7 @@ export function RecordsGrid<T extends object>({
           },
         }}
       >
-        <Card size="sm" className="w-full min-w-0">
+        <Card ref={container} size="sm" className="w-full min-w-0">
           <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
             <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
               {icon}
@@ -171,7 +215,7 @@ export function RecordsGrid<T extends object>({
           <CardFooter>
             <DataGridPagination
               table={table}
-              recordCount={records.length}
+              recordCount={server?.total ?? records.length}
               recordLabel="条记录"
             />
           </CardFooter>

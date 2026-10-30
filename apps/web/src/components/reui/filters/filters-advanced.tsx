@@ -105,7 +105,7 @@ import {
 
 const CONTENT_COLUMNS = ["combinator", "field", "operator", "value"] as const
 
-const ACTION_COLUMNS = ["drag", "menu", "add", "remove"] as const
+const ACTION_COLUMNS = ["drag", "menu", "add", "add-group", "remove"] as const
 
 /** Every column a row may draw, in two bands. Navigation is by COLUMN NAME and
  * never position: the BANDS keep ArrowDown off a group's footer button. */
@@ -1112,6 +1112,23 @@ function FilterUnknownRow<V>({
 /*                                    Group                                   */
 /* -------------------------------------------------------------------------- */
 
+export interface FiltersAdvancedGroupFooterContext {
+  labels: FilterEmptyStateContext["labels"]
+  disabled: boolean
+  addFilter: () => void
+  addGroup: () => void
+  addFilterProps: React.ComponentProps<"button">
+  addGroupProps: React.ComponentProps<"button">
+  management: React.ReactNode
+}
+
+type FilterGroupFooterRenderer = (
+  context: FiltersAdvancedGroupFooterContext
+) => React.ReactNode
+
+const FilterGroupFooterSlot =
+  React.createContext<FilterGroupFooterRenderer | null>(null)
+
 /** A nested group: an indented card, its conditions, and one way to add
  * another. The HEADLINE went; the pill outside already says "or". */
 function FilterAdvancedGroup<V, O>({
@@ -1126,6 +1143,18 @@ function FilterAdvancedGroup<V, O>({
   const focusStore = useFilterFocusStore()
 
   const { query } = useFilterState<V>()
+  const renderGroupFooter = React.useContext(FilterGroupFooterSlot)
+  const groupRef = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    const focus = focusStore.getSnapshot()
+    const row = groupRef.current
+    if (row && focus.id === group.id && focus.segment === "add") {
+      ownCells(row)
+        .find((cell) => cell.getAttribute(CELL_ATTRIBUTE) === "add")
+        ?.focus()
+    }
+  }, [focusStore, group.id])
 
   const issue = useFilterIssue(group.id)
   const issueText = issue ? filterIssueLabel(issue, actions.labels) : ""
@@ -1141,10 +1170,11 @@ function FilterAdvancedGroup<V, O>({
     // DOM order, which the arrow walker reads: a group's own controls are all
     // in its footer now, add first and the trailing pair after it.
     list.push("add")
+    if (renderGroupFooter) list.push("add-group")
     if (canMove) list.push("drag")
     list.push("menu")
     return list
-  }, [slot, canMove])
+  }, [slot, canMove, renderGroupFooter])
 
   const active = useActiveColumn(
     group.id,
@@ -1170,10 +1200,25 @@ function FilterAdvancedGroup<V, O>({
     focusStore.set({ id, segment: "field", autoOpen: true })
   }
 
+  const addGroupInto = () => {
+    const id = actions.addGroup(group.id)
+    if (id) focusStore.set({ id, segment: "add", autoOpen: false })
+  }
+
+  const management = (
+    <div className={ACTION_BAND_CLASS}>
+      {canMove ? (
+        <RowHandle nodeId={group.id} active={active} onFocus={onCellFocus} />
+      ) : null}
+      <FilterGroupMenu group={group} active={active} onFocus={onCellFocus} />
+    </div>
+  )
+
   return (
     <div
       role="group"
       aria-label={actions.labels.groupLabel(description, position.depth)}
+      ref={groupRef}
       data-slot="filter-row"
       data-node-id={group.id}
       data-parent-id={position.parentId}
@@ -1228,21 +1273,23 @@ function FilterAdvancedGroup<V, O>({
           )}
         >
           {group.rules.length === 0 ? (
-            <p
-              className={cn(
-                /* 70% foreground, not the muted token: on the card's tint the
+            renderGroupFooter ? null : (
+              <p
+                className={cn(
+                  /* 70% foreground, not the muted token: on the card's tint the
                    muted foreground measured 4.35:1 in light, under 4.5:1 AA. */
-                "rounded-md border border-dashed px-2 py-3 text-foreground/70",
-                "text-center text-xs",
-                "data-drop-into:border-primary/60 data-drop-into:bg-primary/5",
-                "data-drop-into:text-primary"
-              )}
-              data-slot="filter-group-empty"
-              data-drop-parent={group.id}
-              data-drop-index={0}
-            >
-              {actions.labels.groupPlaceholder}
-            </p>
+                  "rounded-md border border-dashed px-2 py-3 text-foreground/70",
+                  "text-center text-xs",
+                  "data-drop-into:border-primary/60 data-drop-into:bg-primary/5",
+                  "data-drop-into:text-primary"
+                )}
+                data-slot="filter-group-empty"
+                data-drop-parent={group.id}
+                data-drop-index={0}
+              >
+                {actions.labels.groupPlaceholder}
+              </p>
+            )
           ) : (
             group.rules.map((node, index) => (
               <FilterAdvancedNode<V, O>
@@ -1266,43 +1313,52 @@ function FilterAdvancedGroup<V, O>({
           data-drop-parent={group.id}
           data-drop-index={group.rules.length}
         >
-          <Button
-            variant="outline"
-            size={sizes.button}
-            aria-label={actions.labels.addToGroup}
-            className={cn(
-              /* `shrink` and not merely `min-w-0`: `shrink-0` is baked into
+          {renderGroupFooter ? (
+            renderGroupFooter({
+              labels: actions.labels,
+              disabled: isFilterLocked(actions),
+              addFilter: addInto,
+              addGroup: addGroupInto,
+              addFilterProps: {
+                ...cellProps("add", active),
+                ...issueProps(issue, "group", issueText),
+                "aria-label": actions.labels.addToGroup,
+                onFocus: onCellFocus("add"),
+              },
+              addGroupProps: {
+                ...cellProps("add-group", active),
+                onFocus: onCellFocus("add-group"),
+              },
+              management,
+            })
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                size={sizes.button}
+                aria-label={actions.labels.addToGroup}
+                className={cn(
+                  /* `shrink` and not merely `min-w-0`: `shrink-0` is baked into
                  the shadcn button's own base class. */
-              "min-w-0 shrink font-normal",
-              "overflow-hidden",
-              CELL_INVALID_CLASS
-            )}
-            disabled={actions.disabled}
-            {...filterReadOnlyProps(actions)}
-            {...cellProps("add", active)}
-            /* An EMPTY group is flagged on the control that fills it. */
-            {...issueProps(issue, "group", issueText)}
-            onFocus={onCellFocus("add")}
-            onClick={addInto}
-          >
-            <PlusIcon />
-            {actions.labels.addCondition}
-          </Button>
+                  "min-w-0 shrink font-normal",
+                  "overflow-hidden",
+                  CELL_INVALID_CLASS
+                )}
+                disabled={actions.disabled}
+                {...filterReadOnlyProps(actions)}
+                {...cellProps("add", active)}
+                /* An EMPTY group is flagged on the control that fills it. */
+                {...issueProps(issue, "group", issueText)}
+                onFocus={onCellFocus("add")}
+                onClick={addInto}
+              >
+                <PlusIcon />
+                {actions.labels.addCondition}
+              </Button>
 
-          <div className={cn("ms-auto", ACTION_BAND_CLASS)}>
-            {canMove ? (
-              <RowHandle
-                nodeId={group.id}
-                active={active}
-                onFocus={onCellFocus}
-              />
-            ) : null}
-            <FilterGroupMenu
-              group={group}
-              active={active}
-              onFocus={onCellFocus}
-            />
-          </div>
+              <div className="ms-auto">{management}</div>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -1465,6 +1521,8 @@ export interface FiltersAdvancedPanelProps {
   renderBody?: (body: React.ReactNode) => React.ReactNode
   /** Reuses the panel's mutations and focus handoff with custom controls. */
   footer?: React.ComponentType<FiltersAdvancedFooterContext>
+  /** Uses the same scoped actions at every nested group, preserving row focus and management. */
+  renderGroupFooter?: FilterGroupFooterRenderer
   /** Whether rows can be reordered. See `FiltersProps.reorderable`. */
   reorderable?: boolean
   className?: string
@@ -1479,6 +1537,7 @@ export function FiltersAdvancedPanel<V, O>({
   renderEmpty,
   renderBody,
   footer: Footer,
+  renderGroupFooter,
   reorderable = false,
   className,
 }: FiltersAdvancedPanelProps) {
@@ -2019,7 +2078,9 @@ export function FiltersAdvancedPanel<V, O>({
       }
       className={cn(PANEL_CLASS, className)}
     >
-      {body}
+      <FilterGroupFooterSlot.Provider value={renderGroupFooter ?? null}>
+        {body}
+      </FilterGroupFooterSlot.Provider>
     </div>
   )
 }

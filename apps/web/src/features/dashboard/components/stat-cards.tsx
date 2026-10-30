@@ -96,7 +96,7 @@ export function StatCard({
   title: string
   /** The window the card's picture covers. */
   period: string
-  value: string
+  value: ReactNode
   total?: number
   delta: ReactNode
   basis: string
