@@ -300,9 +300,9 @@ export function Dashboard() {
             icon={<FilesIcon aria-hidden="true" />}
             title="文件资产"
             period="S3 / MinIO"
-            value={String(assets.length)}
+            value={String(data.assetSummary?.total ?? assets.length)}
             delta={null}
-            basis={`${data.connections.length} 个存储 · ${formatSize(assets.reduce((sum, record) => sum + record.size, 0))}`}
+            basis={`${data.connections.length} 个存储 · ${formatSize(data.assetSummary?.size ?? assets.reduce((sum, record) => sum + record.size, 0))}`}
             action={{ label: "查看资产", onClick: () => navigate("/assets") }}
           >
             <SegmentBar
@@ -311,17 +311,21 @@ export function Dashboard() {
                 {
                   key: "sample",
                   label: "文档",
-                  count: assets.filter((record) =>
-                    /\.(md|txt|pdf|docx?)$/i.test(record.name)
-                  ).length,
+                  count:
+                    data.assetSummary?.documents ??
+                    assets.filter((record) =>
+                      /\.(md|txt|pdf|docx?)$/i.test(record.name)
+                    ).length,
                   tone: "bg-muted-foreground/30",
                 },
                 {
                   key: "upload",
                   label: "其他",
-                  count: assets.filter(
-                    (record) => !/\.(md|txt|pdf|docx?)$/i.test(record.name)
-                  ).length,
+                  count: data.assetSummary
+                    ? data.assetSummary.total - data.assetSummary.documents
+                    : assets.filter(
+                        (record) => !/\.(md|txt|pdf|docx?)$/i.test(record.name)
+                      ).length,
                   tone: "bg-primary",
                 },
               ]}

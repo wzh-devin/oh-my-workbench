@@ -26,7 +26,13 @@ import {
   type StorageConnection,
 } from "./model"
 import { RecordHint, RecordsGrid } from "./records-grid"
-import { refreshConnection, updateWorkbench, useWorkbench } from "./store"
+import { refreshConnection, useWorkbench } from "./store"
+import {
+  saveAssetConnection,
+  useAssets,
+  loadAssets,
+} from "@/features/assets/store"
+import { toast } from "sonner"
 import { saveMailAccount } from "@/features/mail/store"
 import { MailProviderIcon } from "@/features/mail/components/mail-provider-icon"
 
@@ -53,6 +59,8 @@ export function ConnectionsTable({
   onAdd: () => void
 }) {
   const { data, busyIds } = useWorkbench()
+  const assetState = useAssets()
+  const loadingFailed = kind === "storage" && assetState.status === "error"
   const [search, setSearch] = useState("")
   const rows: ConnectionRow[] =
     kind === "mail"
@@ -81,18 +89,24 @@ export function ConnectionsTable({
         )
       return
     }
-    return updateWorkbench((current) => ({
-      ...current,
-      connections: current.connections.map((record) =>
-        record.id === id
-          ? {
-              ...record,
-              status: record.status === "paused" ? "connected" : "paused",
-              error: null,
-            }
-          : record
-      ),
-    }))
+    const connection = data.connections.find((record) => record.id === id)
+    if (connection)
+      void saveAssetConnection(
+        {
+          name: connection.name,
+          endpoint: connection.endpoint,
+          bucket: connection.bucket,
+          region: connection.region ?? "",
+          prefix: connection.prefix ?? "workbench",
+          enabled: connection.status === "paused",
+          accessKey: "",
+          secretKey: "",
+          version: connection.version,
+        },
+        id
+      ).catch((error: unknown) =>
+        toast.error(error instanceof Error ? error.message : "更新连接失败")
+      )
   }
 
   const columns: ColumnDef<DataGridFeatures, ConnectionRow>[] = [
@@ -255,24 +269,50 @@ export function ConnectionsTable({
     )
   return (
     <RecordsGrid
+      fillHeight
       title={kind === "mail" ? "邮箱账号" : "存储连接"}
       icon={icon}
       records={records}
       columns={columns}
+      loading={kind === "storage" && assetState.status === "loading"}
       toolbar={
-        <Input
-          aria-label="搜索连接"
-          placeholder="搜索名称或地址…"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          className="w-full sm:w-56"
-        />
+        <>
+          <Input
+            aria-label="搜索连接"
+            placeholder="搜索名称或地址…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="w-full sm:w-56"
+          />
+        </>
       }
       empty={
         <EmptyState
-          title={rows.length ? "没有匹配的连接" : "还没有配置连接"}
-          action={rows.length ? "清除搜索" : "添加连接"}
-          onAction={rows.length ? () => setSearch("") : onAdd}
+          title={
+            loadingFailed
+              ? "存储连接读取失败"
+              : rows.length
+                ? "没有匹配的连接"
+                : kind === "storage"
+                  ? "暂时没有配置存储"
+                  : "还没有配置连接"
+          }
+          action={
+            loadingFailed
+              ? "重试"
+              : rows.length
+                ? "清除搜索"
+                : kind === "storage"
+                  ? "配置存储"
+                  : "添加连接"
+          }
+          onAction={
+            loadingFailed
+              ? () => void loadAssets()
+              : rows.length
+                ? () => setSearch("")
+                : onAdd
+          }
         />
       }
     />

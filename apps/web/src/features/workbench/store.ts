@@ -2,6 +2,11 @@ import { useEffect, useMemo, useSyncExternalStore } from "react"
 import { toast } from "sonner"
 import { useTodos } from "@/features/todos/store"
 import { useMail, syncMailAccount } from "@/features/mail/store"
+import {
+  useAssets,
+  downloadRemoteAsset,
+  testAssetConnection,
+} from "@/features/assets/store"
 
 import { deleteFiles, getFile, putFiles, saveBlob } from "./local-files"
 import {
@@ -110,6 +115,7 @@ export const useWorkbench = () => {
   const current = useSyncExternalStore(subscribe, () => snapshot)
   const todos = useTodos()
   const mail = useMail()
+  const assets = useAssets()
   useEffect(() => {
     if (snapshot.status === "loading") loadWorkbench()
   }, [])
@@ -121,6 +127,10 @@ export const useWorkbench = () => {
       messages: mail.overview.messages,
       mailSummary: mail.overview,
       mailNotifications: mail.overview.notifications,
+      connections: assets.overview.connections,
+      assets: assets.overview.recent,
+      assetFolders: assets.overview.folders,
+      assetSummary: assets.overview,
       preferences: {
         ...current.data.preferences,
         notifications: {
@@ -129,12 +139,17 @@ export const useWorkbench = () => {
         },
       },
     }),
-    [current.data, todos.data, mail.overview]
+    [current.data, todos.data, mail.overview, assets.overview]
   )
   return {
     ...current,
     data,
-    busyIds: [...current.busyIds, ...todos.busyIds, ...mail.busyIds],
+    busyIds: [
+      ...current.busyIds,
+      ...todos.busyIds,
+      ...mail.busyIds,
+      ...assets.busyIds,
+    ],
   }
 }
 
@@ -178,7 +193,7 @@ export const updateWorkbench = (update: (current: Workbench) => Workbench) => {
   }
 }
 
-/** 模拟连接检查并防止重复操作，暂停中的来源不会被异步结果重新开启。 */
+/** 存储执行真实权限检查，错误由统一 Toast 反馈。 */
 export const refreshConnection = async (
   kind: "mail" | "storage",
   id: string
@@ -187,22 +202,11 @@ export const refreshConnection = async (
     await syncMailAccount(id)
     return
   }
-  if (snapshot.busyIds.includes(id)) return
-  publish({ busyIds: [...snapshot.busyIds, id] })
   try {
-    await new Promise((resolve) => window.setTimeout(resolve, 600))
-    const now = new Date().toISOString()
-    const success = updateWorkbench((current) => ({
-      ...current,
-      connections: current.connections.map((connection) =>
-        connection.id === id && connection.status !== "paused"
-          ? { ...connection, status: "connected", lastSync: now, error: null }
-          : connection
-      ),
-    }))
-    if (success) toast.success("连接状态已更新")
-  } finally {
-    publish({ busyIds: snapshot.busyIds.filter((value) => value !== id) })
+    await testAssetConnection(id)
+    toast.success("连接检查通过")
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "连接检查失败")
   }
 }
 
@@ -339,4 +343,6 @@ export const readAsset = async (
 
 /** 预览与下载复用同一读取入口，重命名不改变文件内容索引。 */
 export const downloadAsset = async (asset: Asset) =>
-  saveBlob(await readAsset(asset), asset.name)
+  asset.origin === "remote"
+    ? downloadRemoteAsset(asset.id)
+    : saveBlob(await readAsset(asset), asset.name)

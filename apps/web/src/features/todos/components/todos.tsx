@@ -503,6 +503,7 @@ export function Todos() {
       >
         <TodoState>
           <RecordsGrid
+            fillHeight
             title={title}
             icon={<ListTodoIcon className="size-4" aria-hidden="true" />}
             records={records}

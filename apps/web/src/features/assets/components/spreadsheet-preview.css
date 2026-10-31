@@ -1,0 +1,12 @@
+/* 原生公式栏的 flex 最小宽度会被长单元格撑开，只在资产预览内允许收缩。 */
+.asset-spreadsheet .fortune-fx-input-container,
+.asset-spreadsheet .fortune-fx-input {
+  min-width: 0;
+}
+
+/* 配合原生 28px 栏高完整显示一行，其余内容在栏内滚动，不露出半行文字。 */
+.asset-spreadsheet .fortune-fx-input {
+  padding-top: 0;
+  line-height: 27px;
+  overflow-y: auto;
+}

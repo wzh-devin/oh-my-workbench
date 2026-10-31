@@ -17,15 +17,7 @@ import type {
 } from "@/components/reui/filters/filters-types"
 import { createFilterQuery } from "@/components/reui/filters/filters-query"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Field, FieldLabel } from "@/components/ui/field"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
+import { ViewFormDialog } from "@/components/shared/view-form-dialog"
 import { Choice } from "@/features/workbench/components"
 import { useTodos, saveTodoView } from "../store"
 import type { TodoView, TodoPriority } from "../configuration"
@@ -201,8 +193,7 @@ export function ViewDialog({
   onClose: () => void
   onSaved: (view: TodoView) => void
 }) {
-  const id = useId(),
-    { data, busyIds } = useTodos()
+  const { data, busyIds } = useTodos()
   const [name, setName] = useState(source?.name ?? "")
   const [icon, setIcon] = useState<TodoView["icon"]>(
     source?.icon ?? "list-todo"
@@ -254,99 +245,52 @@ export function ViewDialog({
     }
   }
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !pending) onClose()
-      }}
-    >
-      <DialogContent
-        aria-describedby={undefined}
-        showCloseButton={!pending}
-        className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-4xl"
-      >
-        <DialogHeader>
-          <DialogTitle>{source ? "编辑视图" : "新建视图"}</DialogTitle>
-        </DialogHeader>
-        <form
-          className="flex min-h-0 min-w-0 flex-col gap-4"
-          onSubmit={submit}
-          noValidate
-        >
-          <fieldset
+    <ViewFormDialog
+      editing={!!source}
+      pending={pending}
+      name={name}
+      onNameChange={setName}
+      namePlaceholder="例如：本周工作"
+      onSubmit={submit}
+      onClose={onClose}
+      icons={
+        <ViewIconPicker value={icon} onChange={setIcon} disabled={pending} />
+      }
+      rules={
+        <RuleFilters
+          mode="inline"
+          fields={fields}
+          query={query}
+          onQueryChange={setQuery}
+          disabled={pending}
+          labels={TODO_FILTER_LABELS}
+        />
+      }
+      sort={
+        <Choice
+          value={sort}
+          onChange={(v) => setSort(v as TodoView["sort"])}
+          options={[
+            { value: "due", label: "按截止日期" },
+            { value: "priority", label: "按优先级" },
+            { value: "newest", label: "按创建时间" },
+          ]}
+          label="视图排序"
+          disabled={pending}
+        />
+      }
+      recoveryAction={
+        conflict && (
+          <Button
+            type="button"
+            variant="outline"
             disabled={pending}
-            className="flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto"
+            onClick={reload}
           >
-            <Field>
-              <FieldLabel htmlFor={`${id}-name`}>视图名称</FieldLabel>
-              <Input
-                id={`${id}-name`}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                maxLength={100}
-                placeholder="例如：本周工作"
-                required
-                autoFocus
-              />
-            </Field>
-            <Field>
-              <FieldLabel>图标</FieldLabel>
-              <ViewIconPicker
-                value={icon}
-                onChange={setIcon}
-                disabled={pending}
-              />
-            </Field>
-            <div className="flex min-w-0 flex-col gap-2">
-              <span className="text-sm font-medium">规则</span>
-              <RuleFilters
-                mode="inline"
-                fields={fields}
-                query={query}
-                onQueryChange={setQuery}
-                disabled={pending}
-                labels={TODO_FILTER_LABELS}
-              />
-            </div>
-            <Field>
-              <FieldLabel>排序</FieldLabel>
-              <Choice
-                value={sort}
-                onChange={(v) => setSort(v as TodoView["sort"])}
-                options={[
-                  { value: "due", label: "按截止日期" },
-                  { value: "priority", label: "按优先级" },
-                  { value: "newest", label: "按创建时间" },
-                ]}
-                label="视图排序"
-              />
-            </Field>
-          </fieldset>
-          <DialogFooter>
-            {conflict && (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={pending}
-                onClick={reload}
-              >
-                重新加载
-              </Button>
-            )}
-            <Button
-              type="button"
-              variant="outline"
-              disabled={pending}
-              onClick={onClose}
-            >
-              取消
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {source ? "保存视图" : "创建视图"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+            重新加载
+          </Button>
+        )
+      }
+    />
   )
 }

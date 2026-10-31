@@ -1,9 +1,13 @@
 import type { FilterQuery } from "@/components/reui/filters/filters-types"
 import { matchesQuery } from "@/features/workbench/filters"
 import type { Asset, AssetFolder, Workbench } from "@/features/workbench/model"
+import type { RemoteEntry } from "./model"
 
-export type AssetEntry =
+export type AssetEntry = (
   (Asset & { kind: "file" }) | (AssetFolder & { kind: "folder" })
+) & {
+  thumbnail?: RemoteEntry["thumbnail"]
+}
 
 export const assetEntries = (data: Workbench): AssetEntry[] => [
   ...data.assetFolders.map((folder) => ({

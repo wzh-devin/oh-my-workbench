@@ -1,7 +1,6 @@
-import { useId, useState } from "react"
+import { useEffect, useId, useState } from "react"
 import { DownloadIcon, FolderInputIcon } from "lucide-react"
 import { toast } from "sonner"
-import { Alert, AlertDescription } from "@/components/reui/alert"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -12,6 +11,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { assetApi } from "../api"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -49,8 +50,7 @@ import {
   moveEntries,
   permanentlyDeleteEntries,
   renameEntry,
-} from "../asset-store"
-import { flushFileDeletes, getWorkbench } from "@/features/workbench/store"
+} from "../store"
 
 export type AssetAction = {
   mode: "new" | "rename" | "move" | "copy"
@@ -86,7 +86,6 @@ export function AssetActionDialog({
   )
   const [targetParentId, setTargetParentId] = useState(parentId ?? "root")
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState("")
   const title = {
     new: "新建文件夹",
     rename: "重命名",
@@ -108,14 +107,13 @@ export function AssetActionDialog({
     event.preventDefault()
     if (busy) return
     setBusy(true)
-    setError("")
     try {
       const destination = targetParentId === "root" ? null : targetParentId
       if (action.mode === "new")
-        createFolder(targetConnectionId, destination, name)
-      else if (action.mode === "rename") renameEntry(action.ids[0], name)
+        await createFolder(targetConnectionId, destination, name)
+      else if (action.mode === "rename") await renameEntry(action.ids[0], name)
       else if (action.mode === "move")
-        moveEntries(action.ids, targetConnectionId, destination)
+        await moveEntries(action.ids, targetConnectionId, destination)
       else await copyEntries(action.ids, targetConnectionId, destination)
       toast.success(
         {
@@ -127,7 +125,9 @@ export function AssetActionDialog({
       )
       onClose()
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "操作失败，请重试。")
+      toast.error(
+        caught instanceof Error ? caught.message : "操作失败，请重试。"
+      )
     } finally {
       setBusy(false)
     }
@@ -204,11 +204,6 @@ export function AssetActionDialog({
           {action.mode !== "new" && (
             <p className="text-xs text-muted-foreground">{entries.length} 项</p>
           )}
-          {error && (
-            <Alert variant="destructive" role="alert">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
           <DialogFooter>
             <Button
               type="button"
@@ -242,23 +237,17 @@ export function AssetDeleteDialog({
   onClose: () => void
 }) {
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState("")
-  const [cleanupOnly, setCleanupOnly] = useState(false)
   const remove = async () => {
     if (busy) return
     setBusy(true)
-    setError("")
     try {
-      if (cleanupOnly) await flushFileDeletes()
-      else await permanentlyDeleteEntries(ids)
-      toast.success("已彻底删除")
+      await permanentlyDeleteEntries(ids)
+      toast.success("删除已提交")
       onClose()
     } catch (caught) {
-      const entries = assetEntries(getWorkbench())
-      setCleanupOnly(
-        ids.every((id) => !entries.some((entry) => entry.id === id))
+      toast.error(
+        caught instanceof Error ? caught.message : "删除失败，请重试。"
       )
-      setError(caught instanceof Error ? caught.message : "删除失败，请重试。")
     } finally {
       setBusy(false)
     }
@@ -277,11 +266,6 @@ export function AssetDeleteDialog({
             文件及文件夹内的内容将永久删除，无法恢复。
           </AlertDialogDescription>
         </AlertDialogHeader>
-        {error && (
-          <Alert variant="destructive" role="alert">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy} onClick={onClose}>
             取消
@@ -291,7 +275,8 @@ export function AssetDeleteDialog({
             variant="destructive"
             size="sm"
             disabled={busy}
-            onClick={() => {
+            onClick={(event) => {
+              event.preventDefault()
               void remove()
             }}
           >
@@ -304,7 +289,7 @@ export function AssetDeleteDialog({
 }
 
 export function AssetDetails({
-  entry,
+  entry: initialEntry,
   data,
   onClose,
   onLocate,
@@ -316,22 +301,39 @@ export function AssetDetails({
   onLocate: (entry: AssetEntry) => void
   onDownload: (asset: Asset) => void
 }) {
-  const descendantIds =
-    entry.kind === "folder" ? subtreeIds(data, [entry]) : new Set([entry.id])
-  const trashIds = trashedEntryIds(data)
-  const files = data.assets.filter(
-    (asset) => descendantIds.has(asset.id) && !trashIds.has(asset.id)
-  )
+  const [attempt, setAttempt] = useState(0)
+  const requestKey = `${initialEntry.id}:${initialEntry.version}:${attempt}`
+  const [loaded, setLoaded] = useState<{
+    key: string
+    status: "ready" | "error"
+    entry?: AssetEntry
+  } | null>(null)
+  const entry =
+    loaded?.key === requestKey && loaded.entry ? loaded.entry : initialEntry
+  const loading = loaded?.key !== requestKey,
+    failed = loaded?.key === requestKey && loaded.status === "error"
+  useEffect(() => {
+    const controller = new AbortController()
+    void assetApi
+      .entry(initialEntry.id, controller.signal)
+      .then((entry) => {
+        if (!controller.signal.aborted)
+          setLoaded({ key: requestKey, status: "ready", entry })
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setLoaded({ key: requestKey, status: "error" })
+          toast.error(error instanceof Error ? error.message : "详情读取失败")
+        }
+      })
+    return () => controller.abort()
+  }, [initialEntry.id, requestKey])
   const facts = [
     ["名称", entry.name],
     ["类型", entry.kind === "folder" ? "文件夹" : entry.type],
     [
       "大小",
-      formatSize(
-        entry.kind === "file"
-          ? entry.size
-          : files.reduce((size, file) => size + file.size, 0)
-      ),
+      formatSize(entry.kind === "file" ? entry.size : (entry.size ?? 0)),
     ],
     [
       "所属存储",
@@ -350,7 +352,9 @@ export function AssetDetails({
     ["创建时间", formatTime(entry.createdAt)],
     ["修改时间", formatTime(entry.updatedAt ?? entry.createdAt)],
     ["最近访问", entry.lastOpenedAt ? formatTime(entry.lastOpenedAt) : "—"],
-    ...(entry.kind === "folder" ? [["文件数量", String(files.length)]] : []),
+    ...(entry.kind === "folder"
+      ? [["文件数量", String(entry.fileCount ?? 0)]]
+      : []),
     ...(entry.trashedAt ? [["删除时间", formatTime(entry.trashedAt)]] : []),
   ]
   return (
@@ -365,14 +369,28 @@ export function AssetDetails({
           <SheetTitle>文件详情</SheetTitle>
         </SheetHeader>
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-4 pb-4">
-          <dl className="flex flex-col gap-4">
-            {facts.map(([label, value]) => (
-              <div key={label} className="flex flex-col gap-1">
-                <dt className="text-xs text-muted-foreground">{label}</dt>
-                <dd className="text-sm break-all">{value}</dd>
-              </div>
-            ))}
-          </dl>
+          {loading ? (
+            <Skeleton className="h-64 w-full" />
+          ) : (
+            <dl className="flex flex-col gap-4">
+              {facts.map(([label, value]) => (
+                <div key={label} className="flex flex-col gap-1">
+                  <dt className="text-xs text-muted-foreground">{label}</dt>
+                  <dd className="text-sm break-all">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {failed && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setAttempt((value) => value + 1)}
+            >
+              重试详情
+            </Button>
+          )}
           <div className="flex flex-wrap gap-2 border-t pt-4">
             <Button
               type="button"

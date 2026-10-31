@@ -53,9 +53,11 @@ export const workbenchActivity = (data: Workbench) => {
         data.messages.filter(
           (record) => dayFormat.format(new Date(record.receivedAt)) === day
         ).length,
-      assets: assets.filter(
-        (record) => dayFormat.format(new Date(record.createdAt)) === day
-      ).length,
+      assets:
+        data.assetSummary?.daily[day] ??
+        assets.filter(
+          (record) => dayFormat.format(new Date(record.createdAt)) === day
+        ).length,
     }
   })
 }
@@ -78,7 +80,7 @@ export function WorkbenchActivity({
       <CardContent className="flex flex-col gap-3 py-4">
         {data.todos.length +
         (data.mailSummary?.total ?? data.messages.length) +
-        activeAssets(data).length ? (
+        (data.assetSummary?.total ?? activeAssets(data).length) ? (
           <>
             <ChartContainer config={CONFIG} className="aspect-auto h-56 w-full">
               <BarChart data={records} accessibilityLayer>

@@ -5,7 +5,8 @@ import type { PaginationState } from "@tanstack/react-table"
 export function useGridPageSize(
   container: RefObject<HTMLDivElement | null>,
   onAutoSize: (size: number) => void,
-  loading = false
+  loading = false,
+  fillHeight = false
 ) {
   const manual = useRef(false)
   const update = useRef(onAutoSize)
@@ -37,7 +38,20 @@ export function useGridPageSize(
       const bottom =
         Math.min(window.innerHeight, parentRect.bottom) - paddingBottom
       // 直接扣除实测的表头、滚动条、间距和分页栏，避免固定预留高度少算一行。
-      const chromeHeight = cardRect.height - bodyRect.height
+      const content = element.querySelector('[data-slot="card-content"]')
+      const contentRect = content?.getBoundingClientRect()
+      const scrollbar = element.querySelector(
+        '[data-slot="data-grid-scrollbar"][data-orientation="horizontal"]'
+      )
+      // 撑满面板时排除内容区留白，只扣除工具栏、表头和滚动条。
+      const chromeHeight =
+        fillHeight && contentRect
+          ? cardRect.height -
+            contentRect.height +
+            bodyRect.top -
+            contentRect.top +
+            (scrollbar?.getBoundingClientRect().height ?? 0)
+          : cardRect.height - bodyRect.height
       // tbody 最后一行没有底边框，补回共享边框后再取平均，短尾页也保持同一行高。
       const rowHeight = rowCount > 0 ? (bodyRect.height + 1) / rowCount : 0
       const available = bottom - cardRect.top - chromeHeight
@@ -57,7 +71,7 @@ export function useGridPageSize(
       observer?.disconnect()
       window.removeEventListener("resize", measure)
     }
-  }, [container, loading])
+  }, [container, loading, fillHeight])
   return () => {
     manual.current = true
   }

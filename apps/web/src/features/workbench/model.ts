@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { todoSchema } from "@/features/todos/model"
 import type { MailOverview, MailNotification } from "@/features/mail/model"
+import type { AssetOverview } from "@/features/assets/model"
 export { todoSchema } from "@/features/todos/model"
 
 const timestamp = z
@@ -36,7 +37,11 @@ const accountSchema = namedRecord.extend({
   lastSync: timestamp.nullable(),
   error: z.string().nullable(),
 })
-const storageSchema = namedRecord.extend({
+export const storageSchema = namedRecord.extend({
+  version: z.number().int().nonnegative().optional(),
+  region: z.string().optional(),
+  prefix: z.string().optional(),
+  enabled: z.boolean().optional(),
   endpoint: z.url().refine((value) => {
     const url = new URL(value)
     return (
@@ -58,13 +63,17 @@ const storageSchema = namedRecord.extend({
 })
 
 const assetLocation = {
+  version: z.number().int().nonnegative().optional(),
+  legacyId: z.string().nullable().optional(),
   parentId: z.string().min(1).nullable().default(null),
   starred: z.boolean().default(false),
   trashedAt: timestamp.nullable().default(null),
   updatedAt: timestamp.nullable().default(null),
   lastOpenedAt: timestamp.nullable().default(null),
 }
-const assetFolderSchema = namedRecord.extend({
+export const assetFolderSchema = namedRecord.extend({
+  size: z.number().nonnegative().optional(),
+  fileCount: z.number().int().nonnegative().optional(),
   name: z.string().min(1).max(200),
   connectionId: z.string().min(1),
   createdAt: timestamp,
@@ -118,7 +127,7 @@ export const workbenchSchema = z
         size: z.number().nonnegative(),
         type: z.string(),
         createdAt: timestamp,
-        origin: z.enum(["sample", "upload"]),
+        origin: z.enum(["sample", "upload", "remote"]),
         ...assetLocation,
       })
     ),
@@ -164,6 +173,7 @@ export const workbenchSchema = z
 export type Workbench = z.infer<typeof workbenchSchema> & {
   mailSummary?: MailOverview
   mailNotifications?: MailNotification[]
+  assetSummary?: AssetOverview
 }
 export type Todo = Workbench["todos"][number]
 export type MailAccount = Workbench["accounts"][number]
@@ -470,10 +480,14 @@ export const formatTime = (value: string | null) =>
       }).format(new Date(value))
     : "尚未同步"
 
-/** 展示文件实际字节数。 */
-export const formatSize = (bytes: number) =>
-  bytes >= 1024 * 1024
-    ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
-    : bytes >= 1024
-      ? `${(bytes / 1024).toFixed(1)} KB`
-      : `${bytes} B`
+/** 文件与汇总容量共用 1024 进制，达到阈值后自动切换单位。 */
+export const formatSize = (bytes: number) => {
+  const units = ["B", "KB", "MB", "GB", "TB"]
+  let size = Number.isFinite(bytes) && bytes > 0 ? bytes : 0
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024
+    unit++
+  }
+  return `${unit ? size.toFixed(2) : size} ${units[unit]}`
+}

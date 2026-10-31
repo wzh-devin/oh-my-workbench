@@ -326,7 +326,17 @@ export function Mail() {
               }
             >
               <RefreshCwIcon aria-hidden="true" />
-              {syncing ? "同步中" : "同步"}
+              <span className="inline-grid">
+                <span
+                  aria-hidden="true"
+                  className="invisible col-start-1 row-start-1"
+                >
+                  同步中
+                </span>
+                <span className="col-start-1 row-start-1">
+                  {syncing ? "同步中" : "同步"}
+                </span>
+              </span>
             </Button>
             <Button
               type="button"
@@ -363,6 +373,7 @@ export function Mail() {
           />
         ) : (
           <RecordsGrid
+            fillHeight
             title={
               view === "archived"
                 ? "归档"
@@ -380,18 +391,6 @@ export function Mail() {
               sorting,
               onSortingChange: setSorting,
             }}
-            leadingContent={
-              status === "error" && result.messages.length > 0 ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={retry}
-                >
-                  重试
-                </Button>
-              ) : undefined
-            }
             toolbar={
               <>
                 <Input
@@ -431,6 +430,12 @@ export function Mail() {
                     <EllipsisIcon aria-hidden="true" />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    {status === "error" && result.messages.length > 0 && (
+                      <DropdownMenuItem onClick={retry}>
+                        <RefreshCwIcon aria-hidden="true" />
+                        重试加载
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem
                       disabled={
                         !result.total || mail.busyIds.includes("messages:bulk")

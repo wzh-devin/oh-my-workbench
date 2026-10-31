@@ -33,17 +33,19 @@ export function DataGridPagination<T extends object>({
   recordCount: number
   recordLabel?: string
 }) {
-  const { i18n } = useDataGrid()
+  const { i18n, isLoading } = useDataGrid()
   const pageIndex = table.state.pagination.pageIndex
   const pageSize = table.state.pagination.pageSize
-  const pageCount = table.getPageCount()
+  // 空结果也保留分页按钮，筛选和加载时页脚不会折叠、挤动内容区。
+  const pageCount = Math.max(1, table.getPageCount())
   const pageSizes = [...new Set([...PAGE_SIZES, pageSize])].sort(
     (a, b) => a - b
   )
   const from = recordCount === 0 ? 0 : pageIndex * pageSize + 1
   const to = Math.min((pageIndex + 1) * pageSize, recordCount)
   const currentGroupStart =
-    Math.floor(pageIndex / PAGE_GROUP_LIMIT) * PAGE_GROUP_LIMIT
+    Math.floor(Math.min(pageIndex, pageCount - 1) / PAGE_GROUP_LIMIT) *
+    PAGE_GROUP_LIMIT
   const currentGroupEnd = Math.min(
     currentGroupStart + PAGE_GROUP_LIMIT,
     pageCount
@@ -61,6 +63,7 @@ export function DataGridPagination<T extends object>({
           {i18n.labels.rowsPerPage}
         </div>
         <Select
+          disabled={isLoading}
           value={`${pageSize}`}
           onValueChange={(value) => table.setPageSize(Number(value))}
         >
@@ -89,85 +92,86 @@ export function DataGridPagination<T extends object>({
           {recordLabel}
         </div>
 
-        {pageCount > 1 ? (
-          <div className="order-1 flex items-center gap-1">
+        <div className="order-1 flex items-center gap-1">
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            className={arrowButtonClassName}
+            onClick={() => table.previousPage()}
+            disabled={isLoading || !table.getCanPreviousPage()}
+          >
+            <span className="sr-only">{i18n.labels.previousPage}</span>
+            <ChevronLeftIcon className="size-4" />
+          </Button>
+
+          {currentGroupStart > 0 ? (
             <Button
               type="button"
               size="icon-sm"
               variant="ghost"
-              className={arrowButtonClassName}
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
+              className={pageButtonClassName}
+              aria-label={i18n.labels.paginationEllipsis}
+              disabled={isLoading}
+              onClick={() => table.setPageIndex(currentGroupStart - 1)}
             >
-              <span className="sr-only">{i18n.labels.previousPage}</span>
-              <ChevronLeftIcon className="size-4" />
+              ...
             </Button>
+          ) : null}
 
-            {currentGroupStart > 0 ? (
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                className={pageButtonClassName}
-                aria-label={i18n.labels.paginationEllipsis}
-                onClick={() => table.setPageIndex(currentGroupStart - 1)}
-              >
-                ...
-              </Button>
-            ) : null}
+          {Array.from(
+            { length: currentGroupEnd - currentGroupStart },
+            (_, index) => {
+              const page = currentGroupStart + index
 
-            {Array.from(
-              { length: currentGroupEnd - currentGroupStart },
-              (_, index) => {
-                const page = currentGroupStart + index
+              return (
+                <Button
+                  type="button"
+                  key={page}
+                  size="icon-sm"
+                  variant="ghost"
+                  className={cn(
+                    pageButtonClassName,
+                    "text-muted-foreground",
+                    pageIndex === page && "bg-accent text-accent-foreground"
+                  )}
+                  aria-label={i18n.labels.goToPage(page + 1)}
+                  aria-current={pageIndex === page ? "page" : undefined}
+                  disabled={isLoading || recordCount === 0}
+                  onClick={() => table.setPageIndex(page)}
+                >
+                  {page + 1}
+                </Button>
+              )
+            }
+          )}
 
-                return (
-                  <Button
-                    type="button"
-                    key={page}
-                    size="icon-sm"
-                    variant="ghost"
-                    className={cn(
-                      pageButtonClassName,
-                      "text-muted-foreground",
-                      pageIndex === page && "bg-accent text-accent-foreground"
-                    )}
-                    aria-label={i18n.labels.goToPage(page + 1)}
-                    aria-current={pageIndex === page ? "page" : undefined}
-                    onClick={() => table.setPageIndex(page)}
-                  >
-                    {page + 1}
-                  </Button>
-                )
-              }
-            )}
-
-            {currentGroupEnd < pageCount ? (
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                className={pageButtonClassName}
-                aria-label={i18n.labels.paginationEllipsis}
-                onClick={() => table.setPageIndex(currentGroupEnd)}
-              >
-                ...
-              </Button>
-            ) : null}
-
+          {currentGroupEnd < pageCount ? (
             <Button
               type="button"
               size="icon-sm"
               variant="ghost"
-              className={arrowButtonClassName}
-              onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
+              className={pageButtonClassName}
+              aria-label={i18n.labels.paginationEllipsis}
+              disabled={isLoading}
+              onClick={() => table.setPageIndex(currentGroupEnd)}
             >
-              <span className="sr-only">{i18n.labels.nextPage}</span>
-              <ChevronRightIcon className="size-4" />
+              ...
             </Button>
-          </div>
-        ) : null}
+          ) : null}
+
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            className={arrowButtonClassName}
+            onClick={() => table.nextPage()}
+            disabled={isLoading || !table.getCanNextPage()}
+          >
+            <span className="sr-only">{i18n.labels.nextPage}</span>
+            <ChevronRightIcon className="size-4" />
+          </Button>
+        </div>
       </div>
     </div>
   )

@@ -1,4 +1,5 @@
 import { useEffect, useId } from "react"
+import { cn } from "cn"
 import {
   hotkeysCoreFeature,
   selectionFeature,
@@ -6,15 +7,15 @@ import {
 } from "@headless-tree/core"
 import { useTree } from "@headless-tree/react"
 import {
-  ClockIcon,
-  FileIcon,
   FolderIcon,
   FolderOpenIcon,
   HardDriveIcon,
-  StarIcon,
   Trash2Icon,
+  PlusIcon,
+  MoreHorizontalIcon,
+  ChevronDownIcon,
 } from "lucide-react"
-import { Tree, TreeItem, TreeItemLabel } from "@/components/reui/tree"
+import { Tree, TreeItem } from "@/components/reui/tree"
 import { InnerPanel } from "@/components/app-shell/inner-panel"
 import {
   InnerNavButton,
@@ -22,12 +23,20 @@ import {
   InnerNavLabel,
   innerNavRowClassName,
 } from "@/components/app-shell/inner-sidebar-nav"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"
+import type { AssetView } from "../model"
+import { AssetViewIcon } from "./view-dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSidebar } from "@/components/ui/sidebar"
 import type { Workbench } from "@/features/workbench/model"
-import { assetEntries, folderTrail, trashedEntryIds } from "../asset-rules"
+import { folderTrail, trashedEntryIds } from "../asset-rules"
 
 type DirectoryNode = {
   name: string
@@ -37,7 +46,7 @@ type DirectoryNode = {
   storage?: boolean
 }
 
-/** 采用 ReUI c-tree-5 的目录图标，保留导航字号及 Headless Tree 交互。 */
+/** 树节点沿用普通导航行，展开箭头靠右，顶层图标和文字保持对齐。 */
 function AssetDirectoryTree({
   data,
   connectionId,
@@ -58,14 +67,18 @@ function AssetDirectoryTree({
   const labelId = useId()
   const trashIds = trashedEntryIds(data)
   const folders = data.assetFolders.filter((folder) => !trashIds.has(folder.id))
+  // 一次索引目录关系，避免每个节点重新扫描整棵树。
+  const children = new Map<string, string[]>()
+  for (const folder of [...folders].sort((a, b) =>
+    a.name.localeCompare(b.name, "zh-CN", { numeric: true })
+  )) {
+    const key = `${folder.connectionId}:${folder.parentId ?? "root"}`
+    const siblings = children.get(key) ?? []
+    siblings.push(`folder:${folder.id}`)
+    children.set(key, siblings)
+  }
   const childrenOf = (sourceId: string, folderId: string | null) =>
-    folders
-      .filter(
-        (folder) =>
-          folder.connectionId === sourceId && folder.parentId === folderId
-      )
-      .sort((a, b) => a.name.localeCompare(b.name, "zh-CN", { numeric: true }))
-      .map((folder) => `folder:${folder.id}`)
+    children.get(`${sourceId}:${folderId ?? "root"}`) ?? []
   const directoryMap: Record<string, DirectoryNode> = {
     root: {
       name: "存储目录",
@@ -173,10 +186,11 @@ function AssetDirectoryTree({
                 item.getId() === selectedId ? "location" : undefined
               }
             >
-              <TreeItemLabel
-                className={innerNavRowClassName(
-                  item.isSelected(),
-                  "min-w-0 gap-1"
+              <span
+                className={cn(
+                  buttonVariants({ variant: "ghost", size: "sm" }),
+                  innerNavRowClassName(item.isSelected()),
+                  "min-w-0 in-focus-visible:ring-3 in-focus-visible:ring-ring/50"
                 )}
               >
                 <span className="flex min-w-0 items-center gap-2.5">
@@ -197,7 +211,16 @@ function AssetDirectoryTree({
                     truncate={false}
                   />
                 </span>
-              </TreeItemLabel>
+                {item.isFolder() && (
+                  <ChevronDownIcon
+                    aria-hidden="true"
+                    className={cn(
+                      "ml-auto size-4",
+                      !item.isExpanded() && "-rotate-90"
+                    )}
+                  />
+                )}
+              </span>
             </TreeItem>
           )
         })}
@@ -215,6 +238,10 @@ export function AssetNavigation({
   view,
   onNavigate,
   onAdd,
+  views,
+  onEditView,
+  onDeleteView,
+  onAddView,
 }: {
   data: Workbench
   status: string
@@ -227,10 +254,12 @@ export function AssetNavigation({
     view?: string
   ) => void
   onAdd: () => void
+  views: AssetView[]
+  onEditView: (view: AssetView) => void
+  onDeleteView: (view: AssetView) => void
+  onAddView: () => void
 }) {
   const { isMobile, setOpenMobile } = useSidebar()
-  const trashIds = trashedEntryIds(data)
-  const entries = assetEntries(data)
   const navigate = (
     id: string,
     folderId: string | null = null,
@@ -246,56 +275,60 @@ export function AssetNavigation({
       </div>
       <ScrollArea className="min-h-0 flex-1">
         <nav aria-label="资产目录" className="flex flex-col py-1">
-          <InnerNavGroup title="资产" separated={false}>
-            {[
-              {
-                id: "files",
-                label: "全部文件",
-                icon: FileIcon,
-                count: data.assets.filter((asset) => !trashIds.has(asset.id))
-                  .length,
-              },
-              {
-                id: "recent",
-                label: "最近访问",
-                icon: ClockIcon,
-                count: entries.filter(
-                  (entry) => !trashIds.has(entry.id) && entry.lastOpenedAt
-                ).length,
-              },
-              {
-                id: "starred",
-                label: "收藏",
-                icon: StarIcon,
-                count: entries.filter(
-                  (entry) => !trashIds.has(entry.id) && entry.starred
-                ).length,
-              },
-              {
-                id: "trash",
-                label: "回收站",
-                icon: Trash2Icon,
-                count: entries.filter(
-                  (entry) =>
-                    entry.trashedAt &&
-                    !folderTrail(data, entry.parentId).some(
-                      (folder) => folder.trashedAt
-                    )
-                ).length,
-              },
-            ].map(({ id, label, icon: Icon, count }) => (
-              <InnerNavButton
-                key={id}
-                item={{
-                  label,
-                  icon: <Icon aria-hidden="true" />,
-                  badge: count,
-                }}
-                isActive={
-                  view === id && (id !== "files" || connectionId === "all")
-                }
-                onClick={() => navigate("all", null, id)}
-              />
+          <InnerNavGroup
+            title="视图"
+            separated={false}
+            action={
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label="新建视图"
+                onClick={onAddView}
+              >
+                <PlusIcon aria-hidden="true" />
+              </Button>
+            }
+          >
+            {views.map((saved) => (
+              <div key={saved.id} className="flex min-w-0 items-center gap-1">
+                <InnerNavButton
+                  item={{
+                    label: saved.name,
+                    icon: <AssetViewIcon name={saved.icon} />,
+                  }}
+                  isActive={
+                    (view === saved.id || view === saved.builtinKey) &&
+                    connectionId === "all"
+                  }
+                  onClick={() => navigate("all", null, saved.id)}
+                />
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={`管理视图：${saved.name}`}
+                      />
+                    }
+                  >
+                    <MoreHorizontalIcon aria-hidden="true" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => onEditView(saved)}>
+                      编辑
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={views.length <= 1}
+                      onClick={() => onDeleteView(saved)}
+                    >
+                      删除
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             ))}
           </InnerNavGroup>
           <InnerNavGroup title="存储" separated>
@@ -318,6 +351,14 @@ export function AssetNavigation({
             )}
           </InnerNavGroup>
           <InnerNavGroup title="管理" separated>
+            <InnerNavButton
+              item={{
+                label: "回收站",
+                icon: <Trash2Icon aria-hidden="true" />,
+              }}
+              isActive={view === "trash"}
+              onClick={() => navigate("all", null, "trash")}
+            />
             <InnerNavButton
               item={{
                 label: "存储连接",

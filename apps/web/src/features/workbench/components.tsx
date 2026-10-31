@@ -1,5 +1,5 @@
 import { useId, type ReactNode } from "react"
-import { InboxIcon, RefreshCwIcon } from "lucide-react"
+import { InboxIcon, RefreshCwIcon, type LucideIcon } from "lucide-react"
 
 import { HeaderActions } from "@/components/app-shell/header-actions"
 import type { InnerNavSection } from "@/components/app-shell/data"
@@ -79,28 +79,37 @@ export function StatusBadge({ status }: { status: ConnectionStatus }) {
   )
 }
 
+/** 空态按内容区域居中；仅在需要恢复或没有常驻入口时展示操作。 */
 export function EmptyState({
   title,
   action,
   onAction,
+  icon: Icon = InboxIcon,
 }: {
   title: string
-  action: string
-  onAction: () => void
+  action?: string
+  onAction?: () => void
+  icon?: LucideIcon
 }) {
   return (
-    <Empty>
+    <Empty role="status" className="text-foreground">
       <EmptyHeader>
-        <EmptyMedia variant="icon">
-          <InboxIcon aria-hidden="true" />
+        <EmptyMedia>
+          <Icon
+            aria-hidden="true"
+            strokeWidth={1.5}
+            className="size-10 text-muted-foreground"
+          />
         </EmptyMedia>
         <EmptyTitle>{title}</EmptyTitle>
       </EmptyHeader>
-      <EmptyContent>
-        <Button type="button" size="sm" onClick={onAction}>
-          {action}
-        </Button>
-      </EmptyContent>
+      {action && onAction && (
+        <EmptyContent>
+          <Button type="button" onClick={onAction}>
+            {action}
+          </Button>
+        </EmptyContent>
+      )}
     </Empty>
   )
 }
@@ -154,7 +163,7 @@ export function WorkbenchScreen({
       className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col"
     >
       <HeaderActions>{actions}</HeaderActions>
-      <div className="flex min-w-0 flex-1 flex-col gap-4 p-4 pb-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4 pb-0">
         <h1 id={titleId} className="sr-only">
           {title}
         </h1>

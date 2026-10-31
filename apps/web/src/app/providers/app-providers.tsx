@@ -5,6 +5,7 @@ import { TopProgressBar } from "@/components/navigation/top-progress-bar"
 import { ThemeProvider } from "@/components/theme/theme-provider"
 import { TodoSession } from "@/features/todos/session"
 import { MailSession } from "@/features/mail/session"
+import { AssetSession } from "@/features/assets/session"
 import { disableMailPush } from "@/features/mail/push"
 import { AuthProvider } from "@/features/auth/auth-context"
 import { Toaster } from "@/components/ui/sonner"
@@ -17,6 +18,7 @@ export function AppProviders() {
         <AuthProvider onBeforeLogout={disableMailPush}>
           <TodoSession />
           <MailSession />
+          <AssetSession />
           <Outlet />
         </AuthProvider>
         <Toaster

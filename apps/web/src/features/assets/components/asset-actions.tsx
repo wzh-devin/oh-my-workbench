@@ -21,6 +21,7 @@ import type { Asset } from "@/features/workbench/model"
 import type { AssetEntry } from "../asset-rules"
 import type { AssetAction } from "./asset-dialogs"
 
+/** 文件菜单沿用资产操作；缩略图重试只在真实失败时出现。 */
 export function AssetActions({
   entry,
   trash,
@@ -32,6 +33,7 @@ export function AssetActions({
   onDelete,
   onLocate,
   onDetails,
+  onThumbnailRetry,
 }: {
   entry: AssetEntry
   trash: boolean
@@ -43,6 +45,7 @@ export function AssetActions({
   onDelete: (ids: string[]) => void
   onLocate: (entry: AssetEntry) => void
   onDetails: (entry: AssetEntry) => void
+  onThumbnailRetry: (entry: AssetEntry) => void
 }) {
   return (
     <div className="flex items-center justify-end gap-1">
@@ -113,6 +116,12 @@ export function AssetActions({
                 <FolderInputIcon aria-hidden="true" />
                 打开所在位置
               </DropdownMenuItem>
+              {entry.thumbnail?.status === "failed" && (
+                <DropdownMenuItem onClick={() => onThumbnailRetry(entry)}>
+                  <RotateCcwIcon aria-hidden="true" />
+                  重新生成缩略图
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 variant="destructive"

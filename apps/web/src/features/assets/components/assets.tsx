@@ -1,17 +1,21 @@
-import { Fragment, useState } from "react"
+import { Fragment, useEffect, useState } from "react"
+import { toast } from "sonner"
 import { Link, useSearchParams } from "react-router"
 import { cn } from "cn"
 import {
   ArrowDownAZIcon,
   ArrowLeftIcon,
+  CopyIcon,
   DownloadIcon,
   FolderIcon,
+  FolderInputIcon,
   FolderOpenIcon,
   FolderPlusIcon,
   Grid2X2Icon,
   HardDriveIcon,
   ListIcon,
   MoreHorizontalIcon,
+  PencilIcon,
   PlusIcon,
   RotateCcwIcon,
   SearchIcon,
@@ -20,17 +24,10 @@ import {
   UploadIcon,
   XIcon,
 } from "lucide-react"
-import type { ColumnDef, Row } from "@tanstack/react-table"
-import {
-  Alert,
-  AlertAction,
-  AlertDescription,
-  AlertTitle,
-} from "@/components/reui/alert"
+import type { ColumnDef, SortingState } from "@tanstack/react-table"
 import type { DataGridFeatures } from "@/components/reui/data-grid/data-grid"
 import { RuleFilters } from "@/components/shared/rule-filters"
 import { createFilterQuery } from "@/components/reui/filters/filters-query"
-import type { FilterField } from "@/components/reui/filters/filters-types"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -40,13 +37,13 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ConnectionsTable } from "@/features/workbench/connections-table"
@@ -56,7 +53,6 @@ import {
   WorkbenchScreen,
 } from "@/features/workbench/components"
 import { ConnectionDialog } from "@/features/workbench/dialogs"
-import { EQUALITY_OPERATORS } from "@/features/workbench/filters"
 import {
   formatSize,
   formatTime,
@@ -70,18 +66,17 @@ import {
 } from "@/features/workbench/store"
 import {
   assetEntries,
-  browseAssets,
   assetHref,
   assetKind,
   folderTrail,
   trashedEntryIds,
   type AssetEntry,
 } from "../asset-rules"
-import { recordOpened, starEntries } from "../asset-store"
+import { recordOpened, starEntries, retryAssetThumbnail } from "../store"
 import { useAssetOperations } from "../use-asset-operations"
 import { droppedFiles } from "../file-drop"
 import { AssetActions } from "./asset-actions"
-import { FileTypeIcon } from "@/components/shared/file-type-icon"
+import { AssetThumbnail } from "./asset-thumbnail"
 import {
   AssetActionDialog,
   AssetDeleteDialog,
@@ -91,26 +86,24 @@ import {
 import { AssetNavigation } from "./asset-navigation"
 import { AssetPreview } from "./asset-preview"
 import { UploadDialog } from "./upload-dialog"
+import { UploadTransfers } from "./upload-transfers"
+import { Skeleton } from "@/components/ui/skeleton"
+import {
+  useAssets,
+  loadAssets,
+  rememberEntries,
+  deleteAssetView,
+} from "../store"
+import { useAssetQuery } from "../use-asset-query"
+import { VirtualAssetGrid } from "./virtual-asset-grid"
+import { assetRuleFields, assetQueryToRule } from "../view-rules"
+import { AssetImportDialog } from "./import-dialog"
+import { AssetViewDialog } from "./view-dialog"
+import { assetApi } from "../api"
+import type { AssetView } from "../model"
+import { DeleteConfirm } from "@/features/workbench/dialogs"
 
 export { assetKind } from "../asset-rules"
-const FILTER_FIELDS: FilterField[] = [
-  {
-    id: "kind",
-    label: "文件类型",
-    type: "select",
-    operators: EQUALITY_OPERATORS,
-    options: [
-      "文件夹",
-      "文档",
-      "表格",
-      "图片",
-      "视频",
-      "音频",
-      "压缩包",
-      "其他",
-    ].map((value) => ({ value, label: value })),
-  },
-]
 const VIEW_NAMES: Record<string, string> = {
   files: "全部文件",
   recent: "最近访问",
@@ -118,23 +111,15 @@ const VIEW_NAMES: Record<string, string> = {
   trash: "回收站",
 }
 
-/** 表头升降序均保留文件夹优先，避免目录混入文件排序。 */
-const sortFileRows = (
-  a: Row<DataGridFeatures, AssetEntry>,
-  b: Row<DataGridFeatures, AssetEntry>,
-  columnId: string
-) => {
-  if (a.original.kind !== b.original.kind) {
-    const direction =
-      a.table.getColumn(columnId)?.getIsSorted() === "desc" ? -1 : 1
-    return (a.original.kind === "folder" ? -1 : 1) * direction
-  }
-  const left = a.getValue<string | number>(columnId)
-  const right = b.getValue<string | number>(columnId)
-  return typeof left === "number" && typeof right === "number"
-    ? left - right
-    : String(left).localeCompare(String(right), "zh-CN", { numeric: true })
-}
+// 下拉排序与表头共享同一个排序状态，切换布局不改变查询顺序。
+const SORT_OPTIONS = [
+  { value: "name", label: "名称升序", column: "name", desc: false },
+  { value: "name-desc", label: "名称降序", column: "name", desc: true },
+  { value: "date", label: "最近修改", column: "time", desc: true },
+  { value: "date-asc", label: "最早修改", column: "time", desc: false },
+  { value: "size", label: "大小降序", column: "size", desc: true },
+  { value: "size-asc", label: "大小升序", column: "size", desc: false },
+]
 
 const EntryIcon = ({
   entry,
@@ -144,7 +129,7 @@ const EntryIcon = ({
   large?: boolean
 }) => {
   if (entry.kind === "file")
-    return <FileTypeIcon file={entry} size={large ? "xl" : "mini"} />
+    return <AssetThumbnail entry={entry} large={large} />
   return (
     <FolderIcon
       aria-hidden="true"
@@ -158,23 +143,57 @@ const EntryIcon = ({
 
 /** 目录状态由 URL 定位，列表、网格、预览及批量操作共用同一资产快照。 */
 export function Assets() {
-  const { data, busyIds, status } = useWorkbench()
+  const { data: baseData, busyIds } = useWorkbench()
+  const {
+    status,
+    overview,
+    userId,
+    revision,
+    entries: cachedEntries,
+  } = useAssets()
+  const data = {
+    ...baseData,
+    assets: [
+      ...new Map(
+        [
+          ...baseData.assets,
+          ...cachedEntries.filter((entry) => entry.kind === "file"),
+        ].map((entry) => [entry.id, entry])
+      ).values(),
+    ],
+    assetFolders: [
+      ...new Map(
+        [
+          ...cachedEntries.filter((entry) => entry.kind === "folder"),
+          ...baseData.assetFolders,
+        ].map((entry) => [entry.id, entry])
+      ).values(),
+    ],
+  }
   const [params, setParams] = useSearchParams()
   const connectionId = params.get("connection") ?? "all"
   const parentId = params.get("folder")
-  const viewParam = params.get("view") ?? "files"
-  const view = ["files", "recent", "starred", "trash", "connections"].includes(
-    viewParam
+  const viewParam =
+    params.get("view") ??
+    (connectionId === "all" && !parentId
+      ? (overview.views.find((record) => record.builtinKey === "files")?.id ??
+        overview.views[0]?.id ??
+        "files")
+      : "files")
+  const savedView = overview.views.find(
+    (record) => record.id === viewParam || record.builtinKey === viewParam
   )
-    ? viewParam
-    : "files"
+  const view = savedView?.builtinKey ?? viewParam
+  const [editingView, setEditingView] = useState<AssetView | "new" | null>(null)
+  const [deletingView, setDeletingView] = useState<AssetView | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [sorting, setSorting] = useState<SortingState>([])
   const layout =
     (params.get("layout") ?? data.preferences.assetLayout) === "grid"
       ? "grid"
       : "list"
   const [search, setSearch] = useState("")
   const [query, setQuery] = useState(() => createFilterQuery())
-  const [sort, setSort] = useState("name")
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [configuring, setConfiguring] = useState<
     StorageConnection | "new" | null
@@ -182,12 +201,13 @@ export function Assets() {
   const [upload, setUpload] = useState<{
     files?: File[]
   } | null>(null)
+  const [transfersOpen, setTransfersOpen] = useState(false)
   const [action, setAction] = useState<AssetAction | null>(null)
   const [deleteIds, setDeleteIds] = useState<string[] | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
+  const [fileError, setFileError] = useState(false)
   const { run, download, remove, restore, busy, error, clearError } =
     useAssetOperations(() => setSelectedIds([]))
-  const [gridPage, setGridPage] = useState(0)
   const connection = data.connections.find(
     (source) => source.id === connectionId
   )
@@ -200,26 +220,108 @@ export function Assets() {
       entry.connectionId === connectionId &&
       !trashIds.has(entry.id)
   )
+  // 尚未配置是正常空态，不发起文件查询或深链详情请求。
+  const hasStorage = overview.connections.length > 0
+  const needsStorage = status === "ready" && !hasStorage
+  const invalidView =
+    status === "ready" &&
+    connectionId === "all" &&
+    !parentId &&
+    !["trash", "connections"].includes(view) &&
+    !savedView
   const invalidLocation =
-    view === "files" &&
-    ((connectionId !== "all" && !connection) || (!!parentId && !folder))
+    invalidView ||
+    (status === "ready" &&
+      view === "files" &&
+      ((connectionId !== "all" && !connection) || (!!parentId && !folder)))
   const searching = !!search.trim() || query.rules.length > 0
-  const records = browseAssets(data, {
-    connectionId,
-    parentId,
-    view,
-    search,
-    query,
-    sort,
-  })
+  const firstSort = sorting[0]
+  const tableSort = firstSort
+    ? ({
+        name: firstSort.desc ? "name-desc" : "name",
+        size: firstSort.desc ? "size" : "size-asc",
+        time: firstSort.desc ? "date" : "date-asc",
+      }[firstSort.id] ?? "")
+    : ""
+  const result = useAssetQuery(
+    {
+      connectionId,
+      parentId,
+      viewId:
+        connectionId === "all" &&
+        !parentId &&
+        view !== "trash" &&
+        view !== "connections"
+          ? (savedView?.id ?? (/^[1-9]\d*$/.test(view) ? view : ""))
+          : "",
+      trash: view === "trash",
+      search,
+      filterQuery: assetQueryToRule(query, false),
+      sort: tableSort,
+      cursorMode: true,
+      pageSize: 50,
+    },
+    status === "ready" &&
+      hasStorage &&
+      view !== "connections" &&
+      !invalidLocation
+  )
+  const records = result.entries
+  const fileId = params.get("file")
+  useEffect(() => {
+    const legacyFolder =
+      parentId && !/^[1-9]\d*$/.test(parentId) ? parentId : null
+    const requestedId = fileId ?? legacyFolder
+    if (!requestedId || !userId || !hasStorage) return
+    const controller = new AbortController()
+    void assetApi
+      .entry(requestedId, controller.signal)
+      .then((entry) => {
+        if (!controller.signal.aborted) {
+          setFileError(false)
+          rememberEntries([entry], userId)
+          if (entry.id !== requestedId)
+            setParams(
+              (current) => {
+                const next = new URLSearchParams(current)
+                next.set("connection", entry.connectionId)
+                if (entry.kind === "file") {
+                  next.set("file", entry.id)
+                  if (entry.parentId) next.set("folder", entry.parentId)
+                  else next.delete("folder")
+                } else next.set("folder", entry.id)
+                next.delete("view")
+                return next
+              },
+              { replace: true }
+            )
+        }
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        setFileError(true)
+        toast.error(error instanceof Error ? error.message : "文件不可用", {
+          id: "asset-file",
+          action: { label: "重试", onClick: () => void loadAssets(true) },
+        })
+      })
+    return () => controller.abort()
+  }, [fileId, parentId, userId, revision, hasStorage, setParams])
   const selected = records.filter((entry) => selectedIds.includes(entry.id))
   const selectedKeys = selected.map((entry) => entry.id)
   const previewFile = data.assets.find(
-    (asset) => asset.id === params.get("file") && !trashIds.has(asset.id)
+    (asset) =>
+      asset.id === params.get("file") &&
+      !trashIds.has(asset.id) &&
+      !("hidden" in asset && asset.hidden)
   )
   const detail = entries.find((entry) => entry.id === detailId)
   const title =
-    folder?.name ?? connection?.name ?? VIEW_NAMES[view] ?? "文件资产"
+    folder?.name ??
+    connection?.name ??
+    savedView?.name ??
+    VIEW_NAMES[view] ??
+    "文件资产"
   const LocationIcon = folder ? FolderOpenIcon : HardDriveIcon
   const canUpload = data.connections.some(
     (source) => source.status === "connected"
@@ -241,7 +343,8 @@ export function Assets() {
     setSearch("")
     setQuery(createFilterQuery())
     setSelectedIds([])
-    setGridPage(0)
+
+    setSorting([])
     clearError()
     setParams(next)
   }
@@ -274,20 +377,31 @@ export function Assets() {
       ? href
       : `${href}&layout=${layout}`
   }
-  const toggleSelected = (id: string, checked: boolean) =>
+  const toggleSelected = (id: string, checked: boolean) => {
+    // 保持服务端每批200项契约，连续加载后不能产生无法提交的选择。
+    if (checked && !selectedIds.includes(id) && selectedIds.length >= 200) {
+      toast.error("每次最多选择 200 项", { id: "asset-selection" })
+      return
+    }
     setSelectedIds((current) =>
       checked
         ? [...new Set([...current, id])]
         : current.filter((key) => key !== id)
     )
-  const allSelected = records.length > 0 && selected.length === records.length
+  }
+  const selectable = records.slice(0, 200)
+  const allSelected =
+    selectable.length > 0 &&
+    selectable.every((entry) => selectedIds.includes(entry.id))
   const selectAll = (
     <Checkbox
-      aria-label="选择全部文件"
+      aria-label={
+        records.length > 200 ? "选择前200个已加载文件" : "选择已加载文件"
+      }
       checked={allSelected}
       indeterminate={selected.length > 0 && !allSelected}
       onCheckedChange={(checked) =>
-        setSelectedIds(checked ? records.map((entry) => entry.id) : [])
+        setSelectedIds(checked ? selectable.map((entry) => entry.id) : [])
       }
     />
   )
@@ -305,6 +419,9 @@ export function Assets() {
       onDelete={setDeleteIds}
       onLocate={locate}
       onDetails={(record) => setDetailId(record.id)}
+      onThumbnailRetry={(record) => {
+        void run(() => retryAssetThumbnail(record.id), "已加入生成队列")
+      }}
     />
   )
   const nameFor = (entry: AssetEntry, preview = false) => (
@@ -315,7 +432,10 @@ export function Assets() {
           type="button"
           size="sm"
           variant="link"
-          className="min-w-0 justify-start font-normal"
+          className={cn(
+            "min-w-0 font-normal",
+            preview ? "w-full justify-center" : "justify-start"
+          )}
           onClick={() => setDetailId(entry.id)}
         >
           <span className="truncate">{entry.name}</span>
@@ -324,7 +444,9 @@ export function Assets() {
         <Link
           className={cn(
             "min-w-0 text-sm font-normal transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-ring",
-            preview ? "flex w-full flex-col items-center gap-4" : "truncate"
+            preview
+              ? "flex w-full flex-col items-center gap-4 text-center"
+              : "truncate"
           )}
           title={entry.name}
           to={entryHref(entry)}
@@ -344,7 +466,7 @@ export function Assets() {
           <span className="w-full truncate">{entry.name}</span>
         </Link>
       )}
-      {entry.starred && (
+      {!preview && entry.starred && (
         <StarIcon
           className="size-3.5 shrink-0 text-muted-foreground"
           aria-label="已收藏"
@@ -371,7 +493,6 @@ export function Assets() {
       accessorKey: "name",
       header: "文件名称",
       enableSorting: true,
-      sortFn: sortFileRows,
       size: 300,
       meta: { fillWidth: true },
       cell: ({ row }) => nameFor(row.original),
@@ -391,7 +512,6 @@ export function Assets() {
       accessorFn: (entry) => (entry.kind === "file" ? entry.size : 0),
       header: "大小",
       enableSorting: true,
-      sortFn: sortFileRows,
       size: 120,
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground tabular-nums">
@@ -479,7 +599,6 @@ export function Assets() {
             ? (entry.lastOpenedAt ?? entry.createdAt)
             : (entry.updatedAt ?? entry.createdAt),
       enableSorting: true,
-      sortFn: sortFileRows,
       header:
         view === "trash"
           ? "删除时间"
@@ -510,10 +629,12 @@ export function Assets() {
   const clearFilters = () => {
     setSearch("")
     setQuery(createFilterQuery())
-    setGridPage(0)
   }
   const empty = (
     <EmptyState
+      icon={
+        searching ? SearchIcon : view === "files" ? FolderOpenIcon : undefined
+      }
       title={
         searching
           ? "没有匹配的文件"
@@ -526,40 +647,218 @@ export function Assets() {
                 : "文件夹为空"
       }
       action={
-        searching ? "清除筛选" : view === "files" ? "上传" : "查看全部文件"
+        searching ? "清除筛选" : view === "files" ? undefined : "查看全部文件"
       }
       onAction={
         searching
           ? clearFilters
           : view === "files"
-            ? () => openUpload()
+            ? undefined
             : () => navigate("all")
       }
     />
   )
+  const panelState = needsStorage ? (
+    <EmptyState
+      title="暂时没有配置存储"
+      action="配置存储"
+      onAction={() => setConfiguring("new")}
+    />
+  ) : invalidLocation ? (
+    <EmptyState
+      title={invalidView ? "视图不可用" : "目录不可用"}
+      action="返回全部文件"
+      onAction={() => navigate("all")}
+    />
+  ) : status === "error" || result.status === "error" ? (
+    <EmptyState
+      title="文件读取失败"
+      action="重试"
+      onAction={() => {
+        void loadAssets()
+        result.retry()
+      }}
+    />
+  ) : undefined
+  const loading =
+    !panelState && (status === "loading" || result.status === "loading")
+  // 操作与恢复入口常驻工具栏；选中数量只更新固定宽度的数字，不插入页面区块。
+  const batchActions = (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-label="批量文件操作"
+            disabled={
+              !selected.length &&
+              !error &&
+              !(fileError && fileId) &&
+              !(savedView && result.status === "error") &&
+              connection?.status !== "error"
+            }
+          />
+        }
+      >
+        <MoreHorizontalIcon aria-hidden="true" />
+        操作
+        <span
+          className="w-5 text-xs tabular-nums"
+          role="status"
+          aria-label={`已选 ${selected.length} 项`}
+        >
+          {selected.length}
+        </span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {view === "trash" ? (
+          <>
+            <DropdownMenuItem
+              disabled={busy || !selected.length}
+              onClick={() => restore(selectedKeys)}
+            >
+              <RotateCcwIcon aria-hidden="true" />
+              恢复
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={busy || !selected.length}
+              onClick={() => setDeleteIds(selectedKeys)}
+            >
+              <Trash2Icon aria-hidden="true" />
+              彻底删除
+            </DropdownMenuItem>
+          </>
+        ) : (
+          <>
+            <DropdownMenuItem
+              disabled={
+                busy ||
+                !selected.length ||
+                selected.some((entry) => entry.kind === "folder")
+              }
+              onClick={() => {
+                void run(
+                  async () => {
+                    for (const entry of selected)
+                      if (entry.kind === "file") await downloadAsset(entry)
+                  },
+                  undefined,
+                  "下载失败"
+                )
+              }}
+            >
+              <DownloadIcon aria-hidden="true" />
+              下载
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={busy || !selected.length}
+              onClick={() => setAction({ mode: "move", ids: selectedKeys })}
+            >
+              <FolderInputIcon aria-hidden="true" />
+              移动
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={busy || !selected.length}
+              onClick={() => setAction({ mode: "copy", ids: selectedKeys })}
+            >
+              <CopyIcon aria-hidden="true" />
+              复制
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={busy || !selected.length}
+              onClick={() => {
+                void run(() =>
+                  starEntries(
+                    selectedKeys,
+                    !selected.every((entry) => entry.starred)
+                  )
+                )
+              }}
+            >
+              <StarIcon aria-hidden="true" />
+              {selected.length && selected.every((entry) => entry.starred)
+                ? "取消收藏"
+                : "收藏"}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={busy || !selected.length}
+              onClick={() => remove(selectedKeys)}
+            >
+              <Trash2Icon aria-hidden="true" />
+              移入回收站
+            </DropdownMenuItem>
+          </>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          disabled={!selected.length}
+          onClick={() => setSelectedIds([])}
+        >
+          <XIcon aria-hidden="true" />
+          取消选择
+        </DropdownMenuItem>
+        {(error || (fileError && fileId) || connection?.status === "error") && (
+          <DropdownMenuSeparator />
+        )}
+        {error && (
+          <DropdownMenuItem disabled={busy} onClick={error.retry}>
+            <RotateCcwIcon aria-hidden="true" />
+            重试操作
+          </DropdownMenuItem>
+        )}
+        {fileError && fileId && (
+          <DropdownMenuItem onClick={() => void loadAssets(true)}>
+            <RotateCcwIcon aria-hidden="true" />
+            重试文件
+          </DropdownMenuItem>
+        )}
+        {connection?.status === "error" && (
+          <DropdownMenuItem
+            disabled={busyIds.includes(connection.id)}
+            onClick={() => void refreshConnection("storage", connection.id)}
+          >
+            <RotateCcwIcon aria-hidden="true" />
+            重试连接
+          </DropdownMenuItem>
+        )}
+        {savedView && result.status === "error" && (
+          <DropdownMenuItem onClick={() => setEditingView(savedView)}>
+            <PencilIcon aria-hidden="true" />
+            编辑视图
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
   const toolbar = (
     <>
       <Input
+        disabled={needsStorage || invalidLocation}
         aria-label="搜索文件"
         placeholder="搜索文件名称…"
         value={search}
         onChange={(event) => {
           setSearch(event.target.value)
-          setGridPage(0)
+
           setSelectedIds([])
         }}
         className="w-full sm:w-52"
       />
       <RuleFilters
-        fields={FILTER_FIELDS}
+        disabled={needsStorage || invalidLocation}
+        fields={assetRuleFields(overview.connections)}
         query={query}
         onQueryChange={(next) => {
           setQuery(next)
-          setGridPage(0)
+
           setSelectedIds([])
         }}
       />
-      {layout === "grid" && view !== "recent" && view !== "trash" && (
+      {view !== "recent" && view !== "trash" && (
         <div className="flex items-center gap-1">
           <ArrowDownAZIcon
             className="size-4 text-muted-foreground"
@@ -567,19 +866,20 @@ export function Assets() {
           />
           <Choice
             label="文件排序"
-            value={sort}
+            value={tableSort || savedView?.sort || "name"}
             onChange={(value) => {
-              setSort(value)
-              setGridPage(0)
+              const option = SORT_OPTIONS.find(
+                (option) => option.value === value
+              )
+              if (option) setSorting([{ id: option.column, desc: option.desc }])
+
+              setSelectedIds([])
             }}
-            options={[
-              { value: "name", label: "名称" },
-              { value: "date", label: "最近修改" },
-              { value: "size", label: "大小" },
-            ]}
+            options={SORT_OPTIONS}
           />
         </div>
       )}
+      {batchActions}
       <div
         className="flex items-center gap-1"
         role="group"
@@ -609,10 +909,6 @@ export function Assets() {
       </div>
     </>
   )
-  const page = Math.min(
-    gridPage,
-    Math.max(0, Math.ceil(records.length / 24) - 1)
-  )
   return (
     <>
       <AssetNavigation
@@ -623,11 +919,32 @@ export function Assets() {
         view={view}
         onNavigate={navigate}
         onAdd={() => setConfiguring("new")}
+        views={overview.views}
+        onAddView={() => setEditingView("new")}
+        onEditView={setEditingView}
+        onDeleteView={setDeletingView}
       />
       <WorkbenchScreen
         title="资产"
         actions={
           <>
+            <UploadTransfers
+              open={transfersOpen}
+              onOpenChange={setTransfersOpen}
+              onUpload={() => {
+                setTransfersOpen(false)
+                openUpload()
+              }}
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!hasStorage}
+              onClick={() => setImporting(true)}
+            >
+              导入
+            </Button>
             <div
               className={
                 view === "connections"
@@ -650,11 +967,7 @@ export function Assets() {
                     type="button"
                     size="sm"
                     variant="outline"
-                    disabled={
-                      invalidLocation ||
-                      !data.connections.length ||
-                      view !== "files"
-                    }
+                    disabled={invalidLocation || !data.connections.length}
                     onClick={() => setAction({ mode: "new", ids: [] })}
                   >
                     <FolderPlusIcon aria-hidden="true" />
@@ -681,11 +994,7 @@ export function Assets() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem
-                      disabled={
-                        invalidLocation ||
-                        !data.connections.length ||
-                        view !== "files"
-                      }
+                      disabled={invalidLocation || !data.connections.length}
                       onClick={() => setAction({ mode: "new", ids: [] })}
                     >
                       <FolderPlusIcon aria-hidden="true" />
@@ -700,7 +1009,7 @@ export function Assets() {
                 <Button
                   type="button"
                   size="sm"
-                  disabled={invalidLocation}
+                  disabled={invalidLocation || !hasStorage}
                   onClick={() => openUpload()}
                 >
                   <UploadIcon aria-hidden="true" />
@@ -721,7 +1030,7 @@ export function Assets() {
           />
         ) : (
           <div
-            className="flex min-w-0 flex-col gap-4"
+            className="flex min-h-0 min-w-0 flex-1 flex-col gap-4"
             onDragOver={(event) => {
               if (event.dataTransfer.types.includes("Files"))
                 event.preventDefault()
@@ -780,10 +1089,16 @@ export function Assets() {
                   </BreadcrumbItem>
                   {view !== "files" ? (
                     <>
-                      <BreadcrumbSeparator />
-                      <BreadcrumbItem>
-                        <BreadcrumbPage>{VIEW_NAMES[view]}</BreadcrumbPage>
-                      </BreadcrumbItem>
+                      {savedView?.name !== "全部文件" && (
+                        <>
+                          <BreadcrumbSeparator />
+                          <BreadcrumbItem>
+                            <BreadcrumbPage>
+                              {savedView?.name ?? VIEW_NAMES[view]}
+                            </BreadcrumbPage>
+                          </BreadcrumbItem>
+                        </>
+                      )}
                     </>
                   ) : (
                     <>
@@ -840,287 +1155,125 @@ export function Assets() {
                 </BreadcrumbList>
               </Breadcrumb>
             </div>
-            {connection?.status === "error" && (
-              <Alert variant="destructive">
-                <AlertTitle>存储连接异常</AlertTitle>
-                <AlertDescription>{connection.error}</AlertDescription>
-                <AlertAction>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={busyIds.includes(connection.id)}
-                    onClick={() => {
-                      void refreshConnection("storage", connection.id)
-                    }}
-                  >
-                    重试
-                  </Button>
-                </AlertAction>
-              </Alert>
-            )}
-            {error && (
-              <Alert variant="destructive" role="alert">
-                <AlertTitle>{error.title}</AlertTitle>
-                <AlertDescription>{error.message}</AlertDescription>
-                <AlertAction>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={error.retry}
-                  >
-                    重试
-                  </Button>
-                </AlertAction>
-              </Alert>
-            )}
-            {invalidLocation ? (
-              <Alert variant="destructive" role="alert">
-                <AlertTitle>目录不可用</AlertTitle>
-                <AlertAction>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => navigate("all")}
-                  >
-                    返回全部文件
-                  </Button>
-                </AlertAction>
-              </Alert>
-            ) : (
-              <>
-                {selected.length > 0 && (
-                  <div
-                    className="flex flex-wrap items-center gap-2"
-                    aria-label="批量文件操作"
-                  >
-                    <span className="text-sm tabular-nums">
-                      已选 {selected.length} 项
-                    </span>
-                    {view === "trash" ? (
-                      <>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() => restore(selectedKeys)}
-                        >
-                          <RotateCcwIcon aria-hidden="true" />
-                          恢复
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => setDeleteIds(selectedKeys)}
-                        >
-                          <Trash2Icon aria-hidden="true" />
-                          彻底删除
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={
-                            busy ||
-                            selected.some((entry) => entry.kind === "folder")
-                          }
-                          onClick={() => {
-                            void run(
-                              async () => {
-                                for (const entry of selected) {
-                                  if (entry.kind === "file")
-                                    await downloadAsset(entry)
-                                }
-                              },
-                              undefined,
-                              "下载失败"
-                            )
-                          }}
-                        >
-                          <DownloadIcon aria-hidden="true" />
-                          下载
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            setAction({ mode: "move", ids: selectedKeys })
-                          }
-                        >
-                          移动
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            setAction({ mode: "copy", ids: selectedKeys })
-                          }
-                        >
-                          复制
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            void run(() =>
-                              starEntries(
-                                selectedKeys,
-                                !selected.every((entry) => entry.starred)
-                              )
-                            )
-                          }}
-                        >
-                          <StarIcon aria-hidden="true" />
-                          {selected.every((entry) => entry.starred)
-                            ? "取消收藏"
-                            : "收藏"}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="destructive"
-                          disabled={busy}
-                          onClick={() => remove(selectedKeys)}
-                        >
-                          <Trash2Icon aria-hidden="true" />
-                          移入回收站
-                        </Button>
-                      </>
-                    )}
-                    <Button
-                      type="button"
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label="取消选择"
-                      onClick={() => setSelectedIds([])}
-                    >
-                      <XIcon aria-hidden="true" />
-                    </Button>
-                  </div>
-                )}
-                {layout === "list" ? (
-                  <RecordsGrid
-                    title={searching ? "搜索结果" : title}
-                    icon={
-                      searching ? (
-                        <SearchIcon className="size-4" aria-hidden="true" />
-                      ) : (
-                        <LocationIcon className="size-4" aria-hidden="true" />
-                      )
-                    }
-                    records={records}
-                    columns={columns}
-                    toolbar={toolbar}
-                    empty={empty}
-                  />
-                ) : (
-                  <div className="flex min-w-0 flex-col gap-4">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <div className="flex items-center gap-2">
-                        {selectAll}
-                        <h2 className="text-sm font-medium">{title}</h2>
-                        <span className="text-xs text-muted-foreground tabular-nums">
-                          {records.length}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
-                        {toolbar}
-                      </div>
+            <RecordsGrid
+              title={title}
+              icon={<LocationIcon className="size-4" aria-hidden="true" />}
+              records={records}
+              loading={loading}
+              fillHeight
+              // 连续加载只改变内容，列表/网格共享游标、排序与选择。
+              autoPageSize={false}
+              server={{
+                sorting,
+                onSortingChange: setSorting,
+              }}
+              continuous={{
+                hasMore: result.hasMore,
+                loading: result.loadingMore,
+                error: result.moreError,
+                onLoadMore: result.loadMore,
+              }}
+              columns={columns}
+              toolbar={toolbar}
+              empty={empty}
+            >
+              {(scrollElement) =>
+                panelState ??
+                (layout === "grid" ? (
+                  <>
+                    <div className="flex items-center gap-2 text-sm">
+                      {selectAll}
+                      <span>
+                        {records.length > 200 ? "选择前 200 项" : "全选已加载"}
+                      </span>
                     </div>
-                    {records.length ? (
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                        {records
-                          .slice(page * 24, (page + 1) * 24)
-                          .map((entry) => (
-                            <Card
-                              key={entry.id}
-                              size="sm"
-                              className={
-                                selectedIds.includes(entry.id)
-                                  ? "bg-accent"
-                                  : undefined
-                              }
-                            >
-                              <CardHeader>
-                                <div className="flex items-center justify-between gap-2">
-                                  <Checkbox
-                                    aria-label={`选择：${entry.name}`}
-                                    checked={selectedIds.includes(entry.id)}
-                                    onCheckedChange={(checked) =>
-                                      toggleSelected(entry.id, checked)
-                                    }
+                    {loading ? (
+                      <Skeleton className="h-64 w-full" />
+                    ) : records.length ? (
+                      <VirtualAssetGrid
+                        entries={records}
+                        scrollElement={scrollElement}
+                        renderItem={(entry) => (
+                          <div
+                            role="listitem"
+                            key={entry.id}
+                            className={cn(
+                              "flex min-w-0 flex-col gap-4 p-3",
+                              selectedIds.includes(entry.id) && "bg-accent"
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <Checkbox
+                                  aria-label={`选择：${entry.name}`}
+                                  checked={selectedIds.includes(entry.id)}
+                                  onCheckedChange={(checked) =>
+                                    toggleSelected(entry.id, checked)
+                                  }
+                                />
+                                {entry.starred && (
+                                  <StarIcon
+                                    className="size-3.5 shrink-0 text-muted-foreground"
+                                    aria-label="已收藏"
                                   />
-                                  {actionsFor(entry)}
-                                </div>
-                              </CardHeader>
-                              <CardContent>
-                                <div className="flex flex-col items-center gap-4">
-                                  {view === "trash" && (
-                                    <EntryIcon entry={entry} large />
-                                  )}
-                                  <div className="w-full min-w-0">
-                                    {nameFor(entry, true)}
-                                  </div>
-                                  <p className="text-xs text-muted-foreground">
-                                    {entry.kind === "file"
-                                      ? `${assetKind(entry)} · ${formatSize(entry.size)}`
-                                      : "文件夹"}
-                                  </p>
-                                </div>
-                              </CardContent>
-                            </Card>
-                          ))}
-                      </div>
+                                )}
+                              </div>
+                              {actionsFor(entry)}
+                            </div>
+                            <div className="flex min-w-0 flex-col items-center gap-4">
+                              {view === "trash" && (
+                                <EntryIcon entry={entry} large />
+                              )}
+                              <div className="w-full min-w-0">
+                                {nameFor(entry, true)}
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {entry.kind === "file"
+                                  ? `${assetKind(entry)} · ${formatSize(entry.size)}`
+                                  : "文件夹"}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      />
                     ) : (
                       empty
                     )}
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {records.length} 项
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={page === 0}
-                          onClick={() => setGridPage(page - 1)}
-                        >
-                          上一页
-                        </Button>
-                        <span className="text-xs tabular-nums">
-                          {page + 1} /{" "}
-                          {Math.max(1, Math.ceil(records.length / 24))}
-                        </span>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={(page + 1) * 24 >= records.length}
-                          onClick={() => setGridPage(page + 1)}
-                        >
-                          下一页
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
+                  </>
+                ) : undefined)
+              }
+            </RecordsGrid>
           </div>
         )}
       </WorkbenchScreen>
+      {importing && <AssetImportDialog onClose={() => setImporting(false)} />}
+      {editingView && (
+        <AssetViewDialog
+          view={editingView === "new" ? undefined : editingView}
+          onClose={() => setEditingView(null)}
+        />
+      )}
+      {deletingView && (
+        <DeleteConfirm
+          open
+          onOpenChange={(open) => {
+            if (!open) setDeletingView(null)
+          }}
+          title={`删除视图“${deletingView.name}”？`}
+          description="文件会保留。"
+          onConfirm={async () => {
+            await deleteAssetView(deletingView)
+            if (savedView?.id === deletingView.id)
+              navigate(
+                "all",
+                null,
+                overview.views.find((record) => record.id !== deletingView.id)
+                  ?.id ?? "files"
+              )
+            return true
+          }}
+        />
+      )}
       {configuring && (
         <ConnectionDialog
           source={configuring === "new" ? undefined : configuring}
@@ -1133,6 +1286,7 @@ export function Assets() {
           parentId={view === "files" ? parentId : null}
           initialFiles={upload.files}
           onClose={() => setUpload(null)}
+          onQueued={() => setTransfersOpen(true)}
         />
       )}
       {action && (
@@ -1170,8 +1324,7 @@ export function Assets() {
           key={`${previewFile.id}:${previewFile.name}:${previewFile.type}`}
           asset={previewFile}
           files={records.filter(
-            (entry): entry is Extract<AssetEntry, { kind: "file" }> =>
-              entry.kind === "file" && view !== "trash"
+            (entry) => entry.kind === "file" && view !== "trash"
           )}
           onChange={(id) => {
             const next = new URLSearchParams(params)

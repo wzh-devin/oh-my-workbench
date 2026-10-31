@@ -2,7 +2,7 @@ import { useRef, useState } from "react"
 import { toast } from "sonner"
 import type { Asset } from "@/features/workbench/model"
 import { downloadAsset } from "@/features/workbench/store"
-import { restoreEntries, trashEntries } from "./asset-store"
+import { restoreEntries, trashEntries } from "./store"
 
 /** 页面操作互斥执行，失败后保留原操作供重试。 */
 export const useAssetOperations = (clearSelection: () => void) => {
@@ -14,7 +14,7 @@ export const useAssetOperations = (clearSelection: () => void) => {
     retry: () => void
   } | null>(null)
   const run = async (
-    operation: () => void | Promise<void>,
+    operation: () => unknown | Promise<unknown>,
     success?: string,
     errorTitle = "操作失败"
   ) => {
@@ -45,14 +45,14 @@ export const useAssetOperations = (clearSelection: () => void) => {
     void run(() => downloadAsset(asset), undefined, "下载失败")
   }
   const remove = (ids: string[]) => {
-    void run(() => {
-      trashEntries(ids)
+    void run(async () => {
+      await trashEntries(ids)
       clearSelection()
     }, "已移入回收站")
   }
   const restore = (ids: string[]) => {
-    void run(() => {
-      restoreEntries(ids)
+    void run(async () => {
+      await restoreEntries(ids)
       clearSelection()
     }, "已恢复")
   }

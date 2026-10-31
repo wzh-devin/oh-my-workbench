@@ -1,0 +1,49 @@
+services:
+  thumbnails:
+    build:
+      context: ../..
+      dockerfile: deploy/gotenberg/renderer.Dockerfile
+    read_only: true
+    tmpfs: ["/tmp:size=384m,mode=1777,noexec,nosuid"]
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 64
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [converter]
+    restart: unless-stopped
+  gotenberg:
+    image: gotenberg/gotenberg:8.38.1
+    command:
+      - gotenberg
+      - --api-timeout=60s
+      - --api-body-limit=55MB
+      - --api-download-from-deny-list=.*
+      - --webhook-deny-list=.*
+      - --chromium-disable-routes=true
+      - --libreoffice-deny-list=.*
+      - --libreoffice-max-queue-size=4
+    mem_limit: 1g
+    cpus: 1.0
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [converter]
+    restart: unless-stopped
+  gateway:
+    image: nginx:stable-alpine
+    user: "101:101"
+    ports: ["127.0.0.1:13039:8080"]
+    volumes: ["./nginx.conf:/etc/nginx/nginx.conf:ro"]
+    read_only: true
+    tmpfs: ["/tmp:mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 64m
+    cpus: 0.25
+    depends_on: [gotenberg, thumbnails]
+    networks: [converter, ingress]
+    restart: unless-stopped
+networks:
+  converter:
+    internal: true
+  ingress:

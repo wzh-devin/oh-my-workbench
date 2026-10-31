@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { lazy, Suspense, useEffect, useState } from "react"
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -6,7 +6,7 @@ import {
   XIcon,
 } from "lucide-react"
 import { FileTypeIcon } from "@/components/shared/file-type-icon"
-import { Alert, AlertDescription, AlertTitle } from "@/components/reui/alert"
+import { Alert, AlertTitle } from "@/components/reui/alert"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -16,15 +16,23 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
+import { cn } from "@/lib/utils"
 import { formatSize, type Asset } from "@/features/workbench/model"
 import { readAsset } from "@/features/workbench/store"
-import { recordOpened } from "../asset-store"
+import { recordOpened } from "../store"
+import { assetApi, assetContentURL } from "../api"
+import { toast } from "sonner"
+import { TextPreview } from "./text-preview"
+import { ImagePreview } from "./image-preview"
+const PdfPreview = lazy(() => import("./pdf-preview"))
 
-/** 仅使用浏览器原生媒体查看器或纯文本，上传内容不会作为页面脚本执行。 */
+/** 按类型选择有界预览；Office 经私有转换，上传内容不作为页面脚本执行。 */
 export const previewKind = (asset: Pick<Asset, "type" | "name">) => {
+  if (/\.(html?|svg)$/i.test(asset.name)) return "text"
+  if (/\.(docx?|xlsx?|pptx?|odt|ods|odp)$/i.test(asset.name)) return "office"
   if (
     asset.type.startsWith("image/") ||
-    /\.(png|jpe?g|gif|webp|avif|svg|bmp)$/i.test(asset.name)
+    /\.(png|jpe?g|gif|webp|avif|bmp)$/i.test(asset.name)
   )
     return "image"
   if (asset.type === "application/pdf" || /\.pdf$/i.test(asset.name))
@@ -33,7 +41,7 @@ export const previewKind = (asset: Pick<Asset, "type" | "name">) => {
   if (asset.type.startsWith("audio/")) return "audio"
   if (
     asset.type.startsWith("text/") ||
-    /\.(txt|md|json|csv|tsv|log|ya?ml|xml|html?|css|[cm]?js|tsx?|py|sh|sql)$/i.test(
+    /\.(txt|md|json|toml|ini|conf|env|go|rs|java|csv|tsv|log|ya?ml|xml|html?|css|[cm]?js|tsx?|py|sh|sql)$/i.test(
       asset.name
     )
   )
@@ -41,10 +49,11 @@ export const previewKind = (asset: Pick<Asset, "type" | "name">) => {
   return "unsupported"
 }
 
-type Preview =
+type Preview = (
   | { status: "loading" }
   | { status: "ready"; url: string; text: string; truncated: boolean }
   | { status: "error"; message: string }
+) & { id: string }
 
 /** 关闭、切换和重试均释放临时 URL，过期读取不会覆盖当前文件。 */
 export function AssetPreview({
@@ -61,65 +70,120 @@ export function AssetPreview({
   onDownload: (asset: Asset) => void
 }) {
   const [attempt, setAttempt] = useState(0)
-  const [preview, setPreview] = useState<Preview>({ status: "loading" })
-  const format = previewKind(asset)
-  const kind =
-    format === "pdf" && navigator.pdfViewerEnabled === false
-      ? "unsupported"
-      : format
+  const [preview, setPreview] = useState<Preview>({
+    id: asset.id,
+    status: "loading",
+  })
+  const kind = previewKind(asset)
+  const unsupported = kind === "unsupported"
   const { id, name, origin, type } = asset
+  const currentPreview =
+    preview.id === id ? preview : { status: "loading" as const }
   const index = files.findIndex((file) => file.id === asset.id)
   useEffect(() => {
     let active = true
     let url: string | undefined
+    const controller = new AbortController()
     const load = async () => {
       try {
-        if (kind === "unsupported") {
-          if (active)
-            setPreview({ status: "ready", url: "", text: "", truncated: false })
-          recordOpened(id)
-          return
+        let text = "",
+          truncated = false
+        if (origin === "remote") {
+          url = assetContentURL(id)
+          if (kind === "office") {
+            let result = await assetApi.preview(id, true, controller.signal)
+            while (
+              result.status === "queued" ||
+              result.status === "rendering"
+            ) {
+              await new Promise<void>((resolve, reject) => {
+                const abort = () => {
+                  clearTimeout(timer)
+                  reject(new DOMException("请求已取消", "AbortError"))
+                }
+                const timer = setTimeout(() => {
+                  controller.signal.removeEventListener("abort", abort)
+                  resolve()
+                }, 2000)
+                controller.signal.addEventListener("abort", abort, {
+                  once: true,
+                })
+              })
+              result = await assetApi.preview(id, false, controller.signal)
+            }
+            if (result.status !== "ready")
+              throw new Error(result.error || "预览转换失败")
+            url = assetContentURL(id, "preview")
+          } else if (kind === "text") {
+            const response = await fetch(url, {
+              signal: controller.signal,
+              credentials: "same-origin",
+              headers: { Range: "bytes=0-524287" },
+            })
+            if (!response.ok) throw new Error("读取文件内容失败")
+            // 即使上游忽略 Range，也在浏览器侧限制读取并取消剩余传输。
+            const reader = response.body?.getReader(),
+              chunks: Uint8Array[] = []
+            let bytes = 0
+            if (reader)
+              try {
+                while (bytes < 512 * 1024) {
+                  const next = await reader.read()
+                  if (next.done) break
+                  const chunk = next.value.subarray(0, 512 * 1024 - bytes)
+                  chunks.push(chunk)
+                  bytes += chunk.length
+                }
+              } finally {
+                await reader.cancel()
+              }
+            const content = new Uint8Array(bytes)
+            let offset = 0
+            for (const chunk of chunks) {
+              content.set(chunk, offset)
+              offset += chunk.length
+            }
+            text = new TextDecoder().decode(content)
+            truncated = asset.size > bytes
+          }
+        } else if (kind !== "unsupported") {
+          const blob = await readAsset({ id, origin, type })
+          if (kind === "text") {
+            text = await blob.slice(0, 512 * 1024).text()
+            truncated = blob.size > 512 * 1024
+          } else url = URL.createObjectURL(blob)
         }
-        const blob = await readAsset({ id, origin, type })
         if (!active) return
-        let text = kind === "text" ? await blob.slice(0, 512 * 1024).text() : ""
-        if (!active) return
-        const truncated = kind === "text" && blob.size > 512 * 1024
-        if (!truncated && /\.json$/i.test(name)) {
+        if (!truncated && /\.json$/i.test(name))
           try {
             text = JSON.stringify(JSON.parse(text), null, 2)
           } catch {
-            /* 保留原始内容以便查看无效 JSON。 */
+            /* 无效 JSON 仍可阅读原文。 */
           }
-        }
-        // 原生 PDF 查看器需要独立文档；固定 MIME 防止伪装为 PDF 的 HTML 被执行。
-        url =
-          kind === "text"
-            ? ""
-            : URL.createObjectURL(
-                kind === "pdf"
-                  ? new Blob([blob], { type: "application/pdf" })
-                  : blob
-              )
-        setPreview({ status: "ready", url, text, truncated })
-        recordOpened(id)
-      } catch (error) {
-        if (active)
-          setPreview({
-            status: "error",
-            message: error instanceof Error ? error.message : "文件预览失败。",
+        setPreview({ id, status: "ready", url: url ?? "", text, truncated })
+        if (origin === "remote")
+          void recordOpened(id).catch(() => {
+            /* 最近访问写入失败不阻断阅读。 */
           })
+      } catch (error) {
+        if (!active || controller.signal.aborted) return
+        const message = error instanceof Error ? error.message : "文件预览失败"
+        setPreview({ id, status: "error", message })
+        toast.error(message)
       }
     }
     void load()
     return () => {
       active = false
-      if (url) URL.revokeObjectURL(url)
+      controller.abort()
+      if (url?.startsWith("blob:")) URL.revokeObjectURL(url)
     }
-    // 文件内容以 id 索引；收藏、访问时间和重命名不会触发重复读取。
-  }, [id, name, origin, type, kind, attempt])
-  const mediaError = () =>
-    setPreview({ status: "error", message: "无法预览此文件，请重试或下载。" })
+  }, [id, name, origin, type, kind, attempt, asset.size])
+  const mediaError = () => {
+    const message = "无法预览此文件，请重试或下载"
+    setPreview({ id, status: "error", message })
+    toast.error(message, { id: `asset-preview:${id}` })
+  }
   return (
     <Dialog
       open
@@ -130,7 +194,10 @@ export function AssetPreview({
       <DialogContent
         showCloseButton={false}
         aria-describedby={undefined}
-        className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-5xl"
+        className={cn(
+          "flex max-h-[calc(100dvh-2rem)] flex-col",
+          unsupported ? "sm:max-w-lg" : "sm:max-w-5xl"
+        )}
       >
         <DialogHeader>
           <div className="flex min-w-0 items-center gap-2">
@@ -164,8 +231,23 @@ export function AssetPreview({
             {formatSize(asset.size)}
           </p>
         </DialogHeader>
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto">
-          {preview.status === "loading" && (
+        <div
+          className={cn(
+            "flex min-h-0 flex-col gap-3 overflow-hidden",
+            !unsupported && "h-[65dvh]"
+          )}
+        >
+          {unsupported && (
+            <div className="flex flex-col items-center gap-4 py-6">
+              <FileTypeIcon file={asset} size="xl" />
+              <p className="text-sm">此文件暂不支持预览</p>
+              <Button type="button" size="sm" onClick={() => onDownload(asset)}>
+                <DownloadIcon aria-hidden="true" />
+                下载文件
+              </Button>
+            </div>
+          )}
+          {currentPreview.status === "loading" && !unsupported && (
             <div
               role="status"
               aria-label="正在读取预览"
@@ -175,16 +257,15 @@ export function AssetPreview({
               <Skeleton className="h-4 w-2/3" />
             </div>
           )}
-          {preview.status === "error" && (
+          {currentPreview.status === "error" && (
             <Alert variant="destructive" role="alert">
               <AlertTitle>预览失败</AlertTitle>
-              <AlertDescription>{preview.message}</AlertDescription>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  setPreview({ status: "loading" })
+                  setPreview({ id, status: "loading" })
                   setAttempt((value) => value + 1)
                 }}
               >
@@ -192,37 +273,24 @@ export function AssetPreview({
               </Button>
             </Alert>
           )}
-          {preview.status === "ready" && (
+          {currentPreview.status === "ready" && (
             <>
               {kind === "image" && (
-                <img
-                  src={preview.url}
-                  alt={asset.name}
-                  className="min-h-0 w-full object-contain"
+                <ImagePreview
+                  key={id}
+                  url={currentPreview.url}
+                  name={asset.name}
                   onError={mediaError}
                 />
               )}
-              {kind === "pdf" && (
-                <object
-                  data={preview.url}
-                  type="application/pdf"
-                  title={`PDF：${asset.name}`}
-                  className="h-[65dvh] w-full border-0"
-                  onError={mediaError}
-                >
-                  <p className="text-sm">无法预览此 PDF 文件</p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => onDownload(asset)}
-                  >
-                    下载文件
-                  </Button>
-                </object>
+              {(kind === "pdf" || kind === "office") && (
+                <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+                  <PdfPreview key={id} url={currentPreview.url} />
+                </Suspense>
               )}
               {kind === "video" && (
                 <video
-                  src={preview.url}
+                  src={currentPreview.url}
                   controls
                   preload="metadata"
                   aria-label={asset.name}
@@ -234,7 +302,7 @@ export function AssetPreview({
               )}
               {kind === "audio" && (
                 <audio
-                  src={preview.url}
+                  src={currentPreview.url}
                   controls
                   preload="metadata"
                   aria-label={asset.name}
@@ -246,29 +314,18 @@ export function AssetPreview({
               )}
               {kind === "text" && (
                 <>
-                  <pre className="min-h-64 overflow-auto bg-muted/40 p-4 text-sm break-words whitespace-pre-wrap">
-                    {preview.text || "（空文件）"}
-                  </pre>
-                  {preview.truncated && (
+                  <TextPreview
+                    key={id}
+                    name={name}
+                    text={currentPreview.text}
+                    onDownload={() => onDownload(asset)}
+                  />
+                  {currentPreview.truncated && (
                     <p className="text-xs text-muted-foreground">
                       仅显示前 512 KB，下载可查看完整内容。
                     </p>
                   )}
                 </>
-              )}
-              {kind === "unsupported" && (
-                <div className="flex min-h-64 flex-col items-center justify-center gap-4">
-                  <FileTypeIcon file={asset} size="xl" />
-                  <p className="text-sm">此文件暂不支持预览</p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => onDownload(asset)}
-                  >
-                    <DownloadIcon aria-hidden="true" />
-                    下载文件
-                  </Button>
-                </div>
               )}
             </>
           )}

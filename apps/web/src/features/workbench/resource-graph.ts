@@ -47,7 +47,7 @@ export const buildResourceGraph = (
       resources: data.connections.map((connection) => ({
         title: connection.name,
         description: `S3 · ${connection.bucket}`,
-        detail: `${assets.filter((record) => record.connectionId === connection.id).length} 个文件 · ${formatTime(connection.lastSync)}`,
+        detail: `${data.assetSummary?.storage.find((record) => record.id === connection.id)?.total ?? assets.filter((record) => record.connectionId === connection.id).length} 个文件 · ${formatTime(connection.lastSync)}`,
         status: connection.status,
         kind: "storage",
         href: `/assets?connection=${encodeURIComponent(connection.id)}`,

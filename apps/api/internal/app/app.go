@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/devin/oh-my-workbench/api/internal/config"
+	"github.com/devin/oh-my-workbench/api/internal/modules/assets"
 	"github.com/devin/oh-my-workbench/api/internal/modules/mail"
 	"github.com/devin/oh-my-workbench/api/internal/platform/cache"
 	"github.com/devin/oh-my-workbench/api/internal/platform/database"
@@ -40,10 +41,17 @@ func Run() error {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	assetService, err := assets.NewService(assets.NewRepository(db), assets.Options{KeyFile: ".local/asset-credentials.key"})
+	if err != nil {
+		stop()
+		return err
+	}
 	defer stop()
 	workersDone := make(chan struct{})
 	go func() { defer close(workersDone); mailbox.Run(ctx) }()
-	server := &http.Server{Addr: conf.HTTPAddr, Handler: newRouter(db, rdb, mailbox), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second}
+	assetsDone := make(chan struct{})
+	go func() { defer close(assetsDone); assetService.Run(ctx) }()
+	server := &http.Server{Addr: conf.HTTPAddr, Handler: newRouter(db, rdb, mailbox, assetService), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second}
 	// Stop network workers before closing their database and Redis pools.
 	shutdownDone := make(chan struct{})
 	go func() {
@@ -56,6 +64,7 @@ func Run() error {
 	err = server.ListenAndServe()
 	stop()
 	<-workersDone
+	<-assetsDone
 	<-shutdownDone
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil

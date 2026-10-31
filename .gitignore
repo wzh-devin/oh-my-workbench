@@ -45,6 +45,7 @@ __fixtures__/
 /apps/api/cmd/rulelab/
 coverage/
 /apps/api/.bin/
+/apps/api/.local/
 /apps/api/bin/
 .turbo/
 .code-review-graph/

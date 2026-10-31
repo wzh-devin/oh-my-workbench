@@ -5,7 +5,7 @@ import {
   type SortingState,
   type OnChangeFn,
 } from "@tanstack/react-table"
-import { useId, useRef, useState, type ReactNode } from "react"
+import { useEffect, useId, useRef, useState, type ReactNode } from "react"
 import { CircleHelpIcon } from "lucide-react"
 import { cn } from "cn"
 import {
@@ -15,6 +15,7 @@ import {
 } from "@/components/reui/data-grid/data-grid"
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Tooltip,
   TooltipContent,
@@ -22,11 +23,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { DataGridScrollArea } from "@/components/reui/data-grid/data-grid-scroll-area"
-import { DataGridTable } from "@/components/reui/data-grid/data-grid-table"
+import {
+  DataGridTable,
+  DataGridTableHeader,
+} from "@/components/reui/data-grid/data-grid-table"
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { DataGridPagination } from "@/features/dashboard/components/data-grid-pagination"
 
 import { useGridPageSize, resizeGridPage } from "./use-grid-page-size"
+import { VirtualRecordsTable } from "./virtual-records-table"
 
 export function RecordHint({
   label,
@@ -64,7 +69,7 @@ export function RecordHint({
   )
 }
 
-/** 主列填充剩余空间，其余列保持定义宽度；所有业务列表共用同一表头与密度。 */
+/** 共用标题、工具栏和分页；children 仅替换内容，fillHeight 由页面分配滚动空间。 */
 export function RecordsGrid<T extends object>({
   records,
   columns,
@@ -75,6 +80,10 @@ export function RecordsGrid<T extends object>({
   leadingContent,
   server,
   loading = false,
+  children,
+  fillHeight = false,
+  autoPageSize = true,
+  continuous,
 }: {
   records: T[]
   columns: ColumnDef<DataGridFeatures, T>[]
@@ -84,25 +93,65 @@ export function RecordsGrid<T extends object>({
   icon?: ReactNode
   leadingContent?: ReactNode
   loading?: boolean
+  children?: ReactNode | ((scrollRef: HTMLDivElement | null) => ReactNode)
+  fillHeight?: boolean
+  autoPageSize?: boolean
+  continuous?: {
+    hasMore: boolean
+    loading: boolean
+    error: boolean
+    onLoadMore: () => void
+  }
   server?: {
-    total: number
-    pagination: PaginationState
-    onPaginationChange: OnChangeFn<PaginationState>
+    total?: number
+    pagination?: PaginationState
+    onPaginationChange?: OnChangeFn<PaginationState>
     sorting: SortingState
     onSortingChange: OnChangeFn<SortingState>
   }
 }) {
   const container = useRef<HTMLDivElement>(null)
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(
+    null
+  )
+  const sentinel = useRef<HTMLDivElement>(null)
+  const {
+    hasMore,
+    loading: loadingMore,
+    error: moreError,
+    onLoadMore,
+  } = continuous ?? {}
+  useEffect(() => {
+    if (
+      !hasMore ||
+      loadingMore ||
+      moreError ||
+      loading ||
+      !sentinel.current ||
+      !scrollElement
+    )
+      return
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) onLoadMore?.()
+      },
+      { root: scrollElement, rootMargin: "160px" }
+    )
+    observer.observe(sentinel.current)
+    return () => observer.disconnect()
+  }, [hasMore, loadingMore, moreError, onLoadMore, scrollElement, loading])
   const [localPage, setLocalPage] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 10,
   })
   const pagination = server?.pagination ?? localPage
+  const showEmpty = fillHeight && !loading && records.length === 0
   const setPagination = server?.onPaginationChange ?? setLocalPage
   const markManualPageSize = useGridPageSize(
     container,
     (size) => setPagination((current) => resizeGridPage(current, size)),
-    loading
+    loading || !autoPageSize || !!continuous,
+    fillHeight
   )
   const table = useTable({
     features: dataGridFeatures,
@@ -112,6 +161,23 @@ export function RecordsGrid<T extends object>({
       const centered = definition.meta?.align === "center"
       const meta = {
         ...definition.meta,
+        // DataGrid 不自动生成占位内容；留空会把加载态渲染成一排细线。
+        skeleton: definition.meta?.skeleton ?? (
+          <div
+            className={cn(
+              "flex min-h-7 items-center",
+              centered && "justify-center"
+            )}
+          >
+            <Skeleton
+              className={
+                definition.size && definition.size <= 64
+                  ? "size-4"
+                  : "h-4 w-3/4"
+              }
+            />
+          </div>
+        ),
         headerClassName: cn(
           centered ? "text-center" : "text-left",
           definition.meta?.headerClassName
@@ -151,12 +217,12 @@ export function RecordsGrid<T extends object>({
       if (value.pageSize !== pagination.pageSize) markManualPageSize()
       setPagination(value)
     },
-    ...(server
+    ...(server || continuous
       ? {
           manualPagination: true,
           manualSorting: true,
-          rowCount: server.total,
-          onSortingChange: server.onSortingChange,
+          rowCount: server?.total ?? records.length,
+          onSortingChange: server?.onSortingChange,
         }
       : {}),
     getRowId: (row, index) => ("id" in row ? String(row.id) : String(index)),
@@ -170,7 +236,7 @@ export function RecordsGrid<T extends object>({
         emptyMessage={empty}
         tableLayout={{
           dense: true,
-          rowBorder: true,
+          rowBorder: !loading,
           width: "fixed",
           columnsResizable: true,
         }}
@@ -194,11 +260,19 @@ export function RecordsGrid<T extends object>({
           },
         }}
       >
-        <Card ref={container} size="sm" className="w-full min-w-0">
-          <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
+        <Card
+          ref={container}
+          aria-busy={loading}
+          size="sm"
+          className={cn("w-full min-w-0", fillHeight && "min-h-0 flex-1")}
+        >
+          <CardHeader className="flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
             <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
               {icon}
-              <h2 className="shrink-0 text-sm font-medium text-foreground">
+              <h2
+                className="min-w-0 truncate text-sm font-medium text-foreground"
+                title={title}
+              >
                 {title}
               </h2>
             </div>
@@ -206,18 +280,74 @@ export function RecordsGrid<T extends object>({
               {toolbar}
             </div>
           </CardHeader>
-          <CardContent className="flex min-w-0 flex-col gap-3">
+          <CardContent
+            ref={setScrollElement}
+            className={cn(
+              "flex min-w-0 flex-col gap-3",
+              fillHeight && "min-h-0 flex-1 overflow-auto"
+            )}
+          >
             {leadingContent}
-            <DataGridScrollArea>
-              <DataGridTable />
-            </DataGridScrollArea>
+            {(typeof children === "function"
+              ? children(scrollElement)
+              : children) ?? (
+              <div
+                className={cn("min-w-0", showEmpty && "flex flex-1 flex-col")}
+              >
+                <DataGridScrollArea>
+                  {showEmpty ? (
+                    <DataGridTableHeader />
+                  ) : continuous && !loading ? (
+                    <VirtualRecordsTable scrollElement={scrollElement} />
+                  ) : (
+                    <DataGridTable />
+                  )}
+                </DataGridScrollArea>
+                {/* 空态使用剩余内容区，避免困在表格的一行里或随列宽横移。 */}
+                {showEmpty && (
+                  <div className="flex flex-1 flex-col items-center justify-center text-center">
+                    {empty}
+                  </div>
+                )}
+              </div>
+            )}
+            {continuous && (
+              <div
+                ref={sentinel}
+                aria-hidden="true"
+                className="h-px shrink-0"
+              />
+            )}
           </CardContent>
-          <CardFooter>
-            <DataGridPagination
-              table={table}
-              recordCount={server?.total ?? records.length}
-              recordLabel="条记录"
-            />
+          <CardFooter className="shrink-0">
+            {continuous ? (
+              <div className="flex w-full items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span className="tabular-nums" aria-live="polite">
+                  已加载 {records.length} 项
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={continuous.loading || !continuous.hasMore}
+                  aria-hidden={!continuous.hasMore}
+                  className={!continuous.hasMore ? "invisible" : undefined}
+                  onClick={continuous.onLoadMore}
+                >
+                  {continuous.loading
+                    ? "加载中…"
+                    : continuous.error
+                      ? "重试加载"
+                      : "加载更多"}
+                </Button>
+              </div>
+            ) : (
+              <DataGridPagination
+                table={table}
+                recordCount={server?.total ?? records.length}
+                recordLabel="条记录"
+              />
+            )}
           </CardFooter>
         </Card>
       </DataGrid>
