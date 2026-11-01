@@ -23,8 +23,8 @@ type ProxyService struct {
 	cipher     cipher.AEAD
 }
 
-func NewProxyService(repository *settingsrepo.ProxyRepository, keyFile string) (*ProxyService, error) {
-	key, err := credentialkey.Load("", keyFile)
+func NewProxyService(repository *settingsrepo.ProxyRepository, encryptionKey string) (*ProxyService, error) {
+	key, err := credentialkey.Decode(encryptionKey)
 	if err != nil {
 		return nil, err
 	}

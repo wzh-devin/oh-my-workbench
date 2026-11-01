@@ -16,7 +16,7 @@ next-env.d.ts
 node_modules/.tmp
 
 # env - real values stay local, .env.example IS committed.
-# Root .env.local holds API secrets and REUI_LICENSE_KEY; never commit it.
+# Root .env.local holds API secrets; never commit it.
 .env*
 !.env.example
 

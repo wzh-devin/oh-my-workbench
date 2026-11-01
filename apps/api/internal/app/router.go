@@ -24,8 +24,8 @@ import (
 	"github.com/devin/oh-my-workbench/api/internal/shared/response"
 )
 
-func newRouter(db *gorm.DB, rdb *redis.Client, mailService *mailservice.Service, proxySettings *settingsservice.ProxyService, assetServices ...*assetservice.Service) *gin.Engine {
-	handler := authhandler.NewHandler(authservice.NewService(authrepo.NewRepository(db, rdb)))
+func newRouter(db *gorm.DB, rdb *redis.Client, mailService *mailservice.Service, proxySettings *settingsservice.ProxyService, systemSettings *settingsservice.SystemService, signingKey string, assetServices ...*assetservice.Service) *gin.Engine {
+	handler := authhandler.NewHandler(authservice.NewService(authrepo.NewRepository(db, rdb), signingKey))
 	r := gin.New()
 	r.Use(gin.Recovery())
 	_ = r.SetTrustedProxies(nil)
@@ -54,6 +54,9 @@ func newRouter(db *gorm.DB, rdb *redis.Client, mailService *mailservice.Service,
 	mailhandler.NewHandler(mailService).RegisterRoutes(api.Group("/mail", handler.RequireSession))
 	if proxySettings != nil {
 		settingshandler.NewProxyHandler(proxySettings).RegisterRoutes(api.Group("/settings/proxies", handler.RequireSession))
+	}
+	if systemSettings != nil {
+		settingshandler.NewSystemHandler(systemSettings).RegisterRoutes(api.Group("/settings/system", handler.RequireSession))
 	}
 	if len(assetServices) > 0 {
 		assethandler.NewHandler(assetServices[0]).RegisterRoutes(api.Group("/assets", handler.RequireSession))

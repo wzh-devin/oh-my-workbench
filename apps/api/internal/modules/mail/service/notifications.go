@@ -8,8 +8,22 @@ import (
 )
 
 // HTTP 入口只调用业务方法，不暴露仓储、凭证或部署配置。
-func (s *Service) PushConfig() (publicKey string, configured bool) {
-	return s.options.VAPIDPublicKey, s.cipher != nil
+func (s *Service) PushConfig(ctx context.Context) (publicKey string, configured bool, err error) {
+	subject, err := s.pushSubject(ctx)
+	if err != nil {
+		return "", s.cipher != nil, err
+	}
+	if subject == "" {
+		return "", s.cipher != nil, nil
+	}
+	return s.options.VAPIDPublicKey, s.cipher != nil, nil
+}
+
+func (s *Service) pushSubject(ctx context.Context) (string, error) {
+	if s.options.PushSubject != nil {
+		return s.options.PushSubject(ctx)
+	}
+	return s.options.VAPIDSubject, nil
 }
 
 func (s *Service) ChangeMessage(ctx context.Context, userID, id int64, input maildomain.MessageChanges) (maildomain.Message, error) {

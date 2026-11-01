@@ -210,7 +210,11 @@ func (h *Handler) Download(c *gin.Context) {
 }
 
 func (h *Handler) PushConfig(c *gin.Context) {
-	publicKey, configured := h.service.PushConfig()
+	publicKey, configured, err := h.service.PushConfig(c.Request.Context())
+	if err != nil {
+		mailError(c, err)
+		return
+	}
 	response.Success(c, gin.H{"publicKey": publicKey, "mailConfigured": configured})
 }
 

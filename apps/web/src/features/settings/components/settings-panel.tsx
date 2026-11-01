@@ -17,6 +17,7 @@ import { MailPushSettings } from "@/features/mail/components/push-settings"
 import { setMailNotifications, useMail } from "@/features/mail/store"
 import { ProxySettings } from "./proxy-settings"
 import { GeneralSettings } from "./general-settings"
+import { SystemSettings } from "./system-settings"
 
 /** 编辑个人资料；失败保留草稿，成功后同步用户菜单。 */
 function ProfileSettings() {
@@ -128,7 +129,12 @@ function NotificationSettings() {
 export function SettingsPanel({ item }: { item: SettingsItem }) {
   const content = (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 py-4">
-      {item.value === "general" && <GeneralSettings />}
+      {item.value === "general" && (
+        <>
+          <GeneralSettings />
+          <SystemSettings />
+        </>
+      )}
       {item.value === "profile" && <ProfileSettings />}
       {item.value === "notifications" && <NotificationSettings />}
       {item.value === "proxy" && <ProxySettings />}

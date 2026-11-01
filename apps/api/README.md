@@ -101,7 +101,7 @@ migrations/
 
 浏览器会话使用 HttpOnly、SameSite=Lax Cookie，有效期 12 小时；JWT 不写入前端存储。API 调用方可以继续使用 login 返回的 token 作为 Bearer 令牌。写接口检查 Origin/Host，反向代理应保留公网 Host。
 
-`HTTP_ADDR` 默认 `localhost:11990`；`COOKIE_SECURE` 默认 true。HTTP 本地开发需明确设置 `COOKIE_SECURE=false`，HTTPS 生产部署设置 true。初次部署应先限制入口并完成管理员配置，再对外开放。Go 仅提供 API，前端静态文件和 SPA fallback 由部署的 Web 服务器提供。
+API 固定监听 `:11990`；Docker 的宿主机端口通过端口映射控制，例如 `18080:11990`。`COOKIE_SECURE` 默认 true。HTTP 本地开发需明确设置 `COOKIE_SECURE=false`，HTTPS 生产部署设置 true。初次部署应先限制入口并完成管理员配置，再对外开放。Go 仅提供 API，前端静态文件和 SPA fallback 由部署的 Web 服务器提供。
 
 账号安全页仅保留修改密码。`GET /api/account/security` 返回 `data: {"passwordSet": true}`；`POST /api/account/security/password` 接收 `currentPassword`、`newPassword`（均为 6–24 字符），只修改会话所属用户。确认密码由前端校验，不发送到后端。当前密码错误、相同新密码或输入无效返回 400；每用户每 60 秒最多 10 次改密请求，超限返回 429。并发冲突返回 409，重新登录后重试。
 
@@ -119,13 +119,9 @@ Handler 负责 HTTP 协议；Service 负责业务校验和流程编排；所有 
 
 支持 QQ、Gmail 的 INBOX；用户填写显示名称、完整邮箱地址、QQ 授权码或 Gmail 应用专用密码。主机分别为 imap.qq.com / imap.gmail.com，端口 993，强制校验证书的 TLS。Gmail 应用密码要求账号支持并开启两步验证；本轮不包含 OAuth、自定义服务器、发信或远端删除。
 
-首次部署在 apps/api 中运行下列命令，将输出的三项密钥保存到项目根目录未跟踪的 `.env.local`，并设置 WEB_PUSH_SUBJECT（如 mailto:admin@example.com）：
+首次启动在数据库迁移完成后自动初始化登录签名、邮箱/资产凭证加密与 Web Push 密钥，保存至 `omw_system_setting` 的系统作用域（`user_id=0`、`key=system.runtime`）。初始化不依赖管理员已创建，并发启动仅使用数据库胜出的同一份配置，重启不重新生成。管理员在“设置 → 通用”填写推送联系地址（例如 `mailto:admin@example.com`）；留空时浏览器推送关闭，邮箱和站内通知仍可使用。普通配置保存后供所有实例按使用时读取，无需重启。
 
-~~~sh
-go run ./cmd/mailkeys
-~~~
-
-MAIL_ENCRYPTION_KEY 是 Base64 编码的 32 字节 AES-GCM 密钥；WEB_PUSH_VAPID_PUBLIC_KEY / PRIVATE_KEY 是 Web Push 身份。所有实例使用同一组值，重启不得重新生成。备份这些密钥；丢失邮箱加密密钥后需要重新输入各邮箱授权凭证。Goose 启动时应用新增迁移，已有迁移不修改。未配置密钥时原认证/Todo继续工作，添加/同步邮箱或开启推送返回明确配置错误。
+系统配置只使用数据库，不读取旧密钥环境变量或本地密钥文件，也无需运行 Go 命令。内部密钥不经管理接口返回，不提供网页重置入口；备份和恢复必须包含系统配置记录，数据库配置损坏时拒绝重新生成。
 
 后台与网页生命周期独立。账号启用后每实例每5秒协调监听租约；每账号只有一个有效监听者，每10秒续租，失效或暂停后旧事务拒绝写入。优先采用 IMAP IDLE，同时每30秒退出并补查，避免服务商漏发实时事件后长时间等待；不支持 IDLE 时同样每30秒检查。网络错误按2、4、8…60秒退避重连，服务重启根据持久化游标补拉。手动同步复用同一个队列与监听者。
 
@@ -176,7 +172,9 @@ Web Push由两条后台消费者领取数据库任务，失败指数退避，最
 
 出站代理在“设置 → 网络代理”中按当前用户分别配置 QQ 邮箱、Gmail、系统通知、对象存储和文件转换，支持 `socks5://` / `socks5h://`。未配置或恢复直连仅影响对应服务，无需重启 API；不再读取 `MAIL_PROXY_URL` 或 `OUTBOUND_PROXY_URL`。回环/私有 IP 与 localhost、local/internal/lan 域名直连；PostgreSQL、Redis 和浏览器连接沿用原配置。代理失败不回退直连；TLS、DNS/IP 与目标限制保持生效。
 
-`omw_system_setting` 统一存储配置：`id,user_id,key,value,version,created_at,updated_at`，唯一索引为 `(user_id,key)`。代理使用 `network.proxy.qq/gmail/push/storage/converter` 键，敏感值 AES-GCM 加密，复用 `.local/asset-credentials.key`，响应仅回显去除凭证的地址；必须持久化此密钥文件。通用设置 Repository 只负责按键存取和版本保护，业务校验与值编码由调用方负责。旧代理表通过后续迁移原位转换，保留现有密文和版本；回滚遇到新增非代理设置会拒绝执行以避免丢失数据。认证接口为 `GET /api/settings/proxies` 和 `PUT /api/settings/proxies/:service`，保存需传 `proxyUrl`、`version`，冲突返回 409。
+`omw_system_setting` 统一存储配置：`id,user_id,key,value,version,created_at,updated_at`，唯一索引为 `(user_id,key)`。代理使用 `network.proxy.qq/gmail/push/storage/converter` 键，敏感值 AES-GCM 加密，复用系统作用域中稳定的资产凭证密钥，响应仅回显去除凭证的地址。通用设置 Repository 负责按键存取、系统作用域原子初始化与版本保护，Service 负责校验和编排。旧代理表通过后续迁移原位转换，保留现有密文和版本；回滚遇到新增非代理设置会拒绝执行以避免数据丢失。认证接口为 `GET /api/settings/proxies` 和 `PUT /api/settings/proxies/:service`，保存需传 `proxyUrl`、`version`，冲突返回 409。
+
+系统普通配置接口为 `GET /api/settings/system` 和 `PUT /api/settings/system`，仅真实管理员会话可访问。响应与保存字段为 `converterUrl`、`pushSubject`、`version`，不接受密钥或其他未知字段；版本冲突返回 409。转换地址只接受不含账号、路径、查询或片段的 HTTP(S) origin；推送联系地址可留空，非空时须为有效 mailto 或 HTTPS 地址。配置中的私钥与凭证密文随数据库一起保存，数据库完整泄露时也会暴露解密密钥，应保护数据库和备份的访问权限。
 
 ## Todo
 

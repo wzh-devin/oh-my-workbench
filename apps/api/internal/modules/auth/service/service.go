@@ -17,14 +17,19 @@ import (
 
 const dummyHash = "$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
-type Service struct{ repo *authrepo.Repository }
+type Service struct {
+	repo       *authrepo.Repository
+	signingKey string
+}
 
 type Session struct {
 	User      authdomain.UserInfo `json:"user"`
 	ExpiresAt int64               `json:"expiresAt"`
 }
 
-func NewService(repository *authrepo.Repository) *Service { return &Service{repo: repository} }
+func NewService(repository *authrepo.Repository, signingKey string) *Service {
+	return &Service{repo: repository, signingKey: signingKey}
+}
 
 func (s Service) Initialized(ctx context.Context) (bool, error) { return s.repo.Initialized(ctx) }
 
@@ -68,7 +73,7 @@ func (s Service) Login(ctx context.Context, username, plainPassword string) (aut
 }
 
 func (s Service) Authenticate(ctx context.Context, value string) (Session, error) {
-	claims, err := tokenutil.ParseToken(value)
+	claims, err := tokenutil.ParseToken(value, s.signingKey)
 	if err != nil {
 		return Session{}, authdomain.ErrUnauthorized
 	}
@@ -94,7 +99,7 @@ func (s Service) Authenticate(ctx context.Context, value string) (Session, error
 }
 
 func (s Service) Logout(ctx context.Context, value string) error {
-	if _, err := tokenutil.ParseToken(value); err != nil {
+	if _, err := tokenutil.ParseToken(value, s.signingKey); err != nil {
 		return nil
 	}
 	return s.repo.DeleteSession(ctx, value)
@@ -118,7 +123,7 @@ func (s Service) InitSystemAdmin(ctx context.Context, username, plainPassword st
 // issueSession 的缓存绑定密码版本，密码变更不需要扫描或删除其他会话。
 func (s Service) issueSession(ctx context.Context, user authdomain.User) (string, error) {
 	now := time.Now()
-	value, err := tokenutil.GenerateToken(jwt.MapClaims{"sub": strconv.FormatInt(user.ID, 10), "jti": rand.Text(), "iat": now.Unix(), "exp": now.Add(authdomain.SessionDuration).Unix()})
+	value, err := tokenutil.GenerateToken(jwt.MapClaims{"sub": strconv.FormatInt(user.ID, 10), "jti": rand.Text(), "iat": now.Unix(), "exp": now.Add(authdomain.SessionDuration).Unix()}, s.signingKey)
 	if err != nil {
 		return "", err
 	}

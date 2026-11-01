@@ -24,7 +24,7 @@ import (
 )
 
 // 邮箱参数校验与业务编排，不直接访问数据库。
-// Deployment supplies secrets and the shared transport; mailbox input never controls endpoints.
+// 系统配置提供稳定密钥与共享传输；邮箱输入不能控制服务端点。
 type Options struct {
 	EncryptionKey   string
 	Dialer          proxy.ContextDialer
@@ -32,6 +32,7 @@ type Options struct {
 	VAPIDPublicKey  string
 	VAPIDPrivateKey string
 	VAPIDSubject    string
+	PushSubject     func(context.Context) (string, error)
 }
 
 type Service struct {
@@ -57,11 +58,13 @@ func NewService(repository *mailrepo.Repository, options Options) (*Service, err
 		private, e2 := base64.RawURLEncoding.DecodeString(options.VAPIDPrivateKey)
 		key, e3 := ecdh.P256().NewPrivateKey(private)
 		if e1 != nil || e2 != nil || e3 != nil || key == nil || !bytes.Equal(key.PublicKey().Bytes(), public) {
-			return nil, fmt.Errorf("WEB_PUSH_VAPID_PUBLIC_KEY / PRIVATE_KEY 不匹配")
+			return nil, fmt.Errorf("系统推送密钥不匹配，请检查系统配置")
 		}
-		subject, err := url.Parse(options.VAPIDSubject)
-		if err != nil || subject == nil || (subject.Scheme != "mailto" && subject.Scheme != "https") {
-			return nil, fmt.Errorf("WEB_PUSH_SUBJECT 必须为 mailto: 或 HTTPS 地址")
+		if options.VAPIDSubject != "" || options.PushSubject == nil {
+			subject, err := url.Parse(options.VAPIDSubject)
+			if err != nil || subject == nil || (subject.Scheme != "mailto" && subject.Scheme != "https") {
+				return nil, fmt.Errorf("推送联系地址必须为 mailto: 或 HTTPS 地址")
+			}
 		}
 	}
 	routes := options.Routes

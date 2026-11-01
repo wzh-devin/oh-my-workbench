@@ -8,13 +8,13 @@
 
 在资产页面填写已有 S3/MinIO 的 Endpoint、Bucket、Region、访问凭证和管理前缀即可；存储连接不需要环境变量，也不需要存储服务提供方增加任何配置。没有连接时显示“暂时没有配置存储”和配置入口。
 
-工作台首次启动自动在 API 工作目录的 `.local/asset-credentials.key` 生成内部加密密钥，文件权限为 0600，后续启动复用。该目录已被 Git 忽略；部署时持久保存并随数据库备份，多实例共享同一份密钥文件。不要删除或重建已有密钥，否则原有凭证无法解密。
+工作台首次启动自动生成内部凭证加密密钥并保存到 `omw_system_setting` 的系统配置，后续启动与多实例复用数据库值。备份和恢复需包含数据库的系统配置。
 
 Endpoint 直接来自连接表单。对象请求固定到原始 origin；拨号前校验 DNS 并连接已核对的 IP，拒绝云元数据、链路本地、共享地址和保留地址。内网 MinIO 使用明确的 IP、localhost、本地服务名或 `.local`/`.internal`/`.lan` 域名；公开域名不能解析到本机或内网。
 
 存储账号需具备专用前缀中的读、写、删除、列举对象版本、创建/列举/终止 Multipart Upload 及列举分片权限。工作台不自动创建 Bucket。已有内容时不能修改对象定位信息，禁用连接不删除内容。
 
-Office预览与缩略图共用私有转换网关，地址由项目根目录 `.env.local` 的 `ASSET_CONVERTER_URL` 设置，进程环境变量优先；未设置时兼容使用 `http://127.0.0.1:13039`。填写 API 可访问的完整 HTTP/HTTPS origin（协议、主机及可选端口），不包含路径、查询参数或账号密码；修改后需重启 API。在 `apps/api/deploy/gotenberg/` 运行 `docker compose up -d --build` 可启动本机服务；该 Compose 的入口仅绑定宿主机回环地址，API 在容器中或异机部署时需另行提供可达的私网入口，并将变量指向该网关。Gotenberg负责Office→PDF，独立渲染容器用libvips负责图片/PDF/纯文本摘要，FFmpeg负责视频截帧，并复用Gotenberg镜像中的Noto CJK字体。转换器禁止外网访问；libvips容器只读、临时目录有界，限制512MiB内存、1CPU、2个并发。服务不可用时原件仍可上传下载，已有缓存仍可读取，待生成任务保留。配置依据见 [Gotenberg配置](https://gotenberg.dev/docs/configuration) 与 [libvips缩略图](https://www.libvips.org/API/current/ctor.Image.thumbnail.html)。
+Office预览与缩略图共用私有转换网关，管理员在“设置 → 通用”配置转换服务地址，保存后供所有 API 实例读取，无需重启；初始缺省地址为 `http://127.0.0.1:13039`。填写 API 可访问的完整 HTTP/HTTPS origin（协议、主机及可选端口），不包含路径、查询参数或账号密码。在 `apps/api/deploy/gotenberg/` 运行 `docker compose up -d --build` 可启动本机服务；该 Compose 的入口仅绑定宿主机回环地址，API 在容器中或异机部署时需提供可达的私网地址，并在设置页指向该网关。Gotenberg负责Office→PDF，独立渲染容器用libvips负责图片/PDF/纯文本摘要，FFmpeg负责视频截帧，并复用Gotenberg镜像中的Noto CJK字体。转换器禁止外网访问；libvips容器只读、临时目录有界，限制512MiB内存、1CPU、2个并发。服务不可用时原件仍可上传下载，已有缓存仍可读取，待生成任务保留。配置依据见 [Gotenberg配置](https://gotenberg.dev/docs/configuration) 与 [libvips缩略图](https://www.libvips.org/API/current/ctor.Image.thumbnail.html)。
 
 ## 视图与筛选
 

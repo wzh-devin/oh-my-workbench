@@ -32,12 +32,17 @@ func Run() error {
 	if err := migrations.Up(context.Background(), pool); err != nil {
 		return err
 	}
+	systemSettings := settingsservice.NewSystemService(settingsrepo.NewRepository(db))
+	runtime, err := systemSettings.Initialize(context.Background())
+	if err != nil {
+		return err
+	}
 	rdb, err := cache.InitRedis(&conf)
 	if err != nil {
 		return err
 	}
 	defer rdb.Close()
-	proxySettings, err := settingsservice.NewProxyService(settingsrepo.NewProxyRepository(db), ".local/asset-credentials.key")
+	proxySettings, err := settingsservice.NewProxyService(settingsrepo.NewProxyRepository(db), runtime.CredentialEncryptionKey)
 	if err != nil {
 		return err
 	}
@@ -45,15 +50,17 @@ func Run() error {
 	defer routes.Close()
 	mailbox, err := mailservice.NewService(mailrepo.NewRepository(db, rdb), mailservice.Options{
 		Routes:        routes,
-		EncryptionKey: conf.MailEncryptionKey, VAPIDPublicKey: conf.WebPushPublicKey,
-		VAPIDPrivateKey: conf.WebPushPrivateKey, VAPIDSubject: conf.WebPushSubject,
+		EncryptionKey: runtime.MailEncryptionKey, VAPIDPublicKey: runtime.VAPIDPublicKey,
+		VAPIDPrivateKey: runtime.VAPIDPrivateKey, VAPIDSubject: runtime.PushSubject,
+		PushSubject: systemSettings.PushSubject,
 	})
 	if err != nil {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	assetService, err := assetservice.NewService(assetrepo.NewRepository(db), assetservice.Options{
-		KeyFile: ".local/asset-credentials.key", ConverterURL: conf.AssetConverterURL, Routes: routes,
+		EncryptionKey: runtime.CredentialEncryptionKey, ConverterURL: runtime.ConverterURL, Routes: routes,
+		ConverterAddress: systemSettings.ConverterURL,
 	})
 	if err != nil {
 		stop()
@@ -64,7 +71,7 @@ func Run() error {
 	go func() { defer close(workersDone); mailbox.Run(ctx) }()
 	assetsDone := make(chan struct{})
 	go func() { defer close(assetsDone); assetService.Run(ctx) }()
-	server := &http.Server{Addr: conf.HTTPAddr, Handler: newRouter(db, rdb, mailbox, proxySettings, assetService), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second}
+	server := &http.Server{Addr: ":11990", Handler: newRouter(db, rdb, mailbox, proxySettings, systemSettings, runtime.JWTSecret, assetService), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second}
 	// Stop network workers before closing their database and Redis pools.
 	shutdownDone := make(chan struct{})
 	go func() {

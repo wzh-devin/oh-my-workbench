@@ -20,7 +20,7 @@ func newCredentialCipher(encoded string) (*credentialCipher, error) {
 	}
 	key, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil || len(key) != 32 {
-		return nil, fmt.Errorf("MAIL_ENCRYPTION_KEY 必须为 Base64 编码的 32 字节密钥")
+		return nil, fmt.Errorf("邮箱凭证密钥无效，请恢复系统配置")
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {

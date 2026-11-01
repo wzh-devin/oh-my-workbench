@@ -38,7 +38,11 @@ func pushHostAllowed(host string) bool {
 }
 
 func (s *Service) SubscribePush(ctx context.Context, userID int64, input SubscriptionInput) error {
-	if s.options.VAPIDPublicKey == "" {
+	subject, err := s.pushSubject(ctx)
+	if err != nil {
+		return err
+	}
+	if s.options.VAPIDPublicKey == "" || subject == "" {
 		return maildomain.ErrPushDisabled
 	}
 	endpoint, err := url.Parse(input.Endpoint)
@@ -95,6 +99,15 @@ func (s *Service) deliverPush(ctx context.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for ctx.Err() == nil {
+		subject, err := s.pushSubject(ctx)
+		if err != nil || subject == "" {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			continue
+		}
 		token := randomToken()
 		d, err := s.repository.ClaimDelivery(ctx, token)
 		if err != nil || d == nil {
@@ -114,7 +127,7 @@ func (s *Service) deliverPush(ctx context.Context) {
 		var response *http.Response
 		if sendErr == nil {
 			response, sendErr = webpush.SendNotificationWithContext(ctx, payload, &webpush.Subscription{Endpoint: d.Endpoint, Keys: webpush.Keys{P256dh: d.PublicKey, Auth: d.Auth}}, &webpush.Options{
-				HTTPClient: client, Subscriber: s.options.VAPIDSubject, VAPIDPublicKey: s.options.VAPIDPublicKey, VAPIDPrivateKey: s.options.VAPIDPrivateKey, TTL: 3600, Urgency: webpush.UrgencyHigh,
+				HTTPClient: client, Subscriber: subject, VAPIDPublicKey: s.options.VAPIDPublicKey, VAPIDPrivateKey: s.options.VAPIDPrivateKey, TTL: 3600, Urgency: webpush.UrgencyHigh,
 			})
 		}
 		status := 0

@@ -38,7 +38,11 @@ func (s *Service) Thumbnail(ctx context.Context, userID, id int64) (*assetdomain
 func (s *Service) rendererAvailable(ctx context.Context, userID int64, suffix string) bool {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, s.converterURL+suffix, nil)
+	address, err := s.converterBase(ctx)
+	if err != nil {
+		return false
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, address+suffix, nil)
 	if err != nil {
 		return false
 	}
@@ -120,7 +124,11 @@ func (s *Service) renderThumbnail(ctx context.Context, preview assetdomain.Previ
 	if strings.HasPrefix(sourceType, "text/") {
 		limit = 512 << 10
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, s.converterURL+"/thumbnail", io.LimitReader(source, limit))
+	address, err := s.converterBase(ctx)
+	if err != nil {
+		return finish(0, "", "缩略图服务暂不可用", assetrepo.PreviewRetry)
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, address+"/thumbnail", io.LimitReader(source, limit))
 	if err != nil {
 		return finish(0, "", "缩略图生成失败", assetrepo.PreviewRetry)
 	}

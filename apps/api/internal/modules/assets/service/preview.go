@@ -41,7 +41,11 @@ func (s *Service) Preview(ctx context.Context, userID, id int64, create bool) (a
 		// 转换器未启动时立即提供下载，不让用户等待多轮后台重试。
 		checkCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
-		request, err := http.NewRequestWithContext(checkCtx, http.MethodGet, s.converterURL+"/health", nil)
+		address, err := s.converterBase(checkCtx)
+		if err != nil {
+			return assetdomain.Preview{}, assetdomain.ErrPreviewUnavailable
+		}
+		request, err := http.NewRequestWithContext(checkCtx, http.MethodGet, address+"/health", nil)
 		if err != nil {
 			return assetdomain.Preview{}, assetdomain.ErrPreviewUnavailable
 		}
@@ -76,6 +80,10 @@ func (s *Service) convertPreview(ctx context.Context, preview assetdomain.Previe
 	}
 	ctx, cancel := context.WithTimeout(ctx, 85*time.Second)
 	defer cancel()
+	address, err := s.converterBase(ctx)
+	if err != nil {
+		return err
+	}
 	b, err := s.repo.Blob(ctx, p.UserID, p.BlobID)
 	if err != nil {
 		return err
@@ -110,7 +118,7 @@ func (s *Service) convertPreview(ctx context.Context, preview assetdomain.Previe
 		_ = writer.CloseWithError(err)
 	}()
 	defer reader.Close()
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, s.converterURL+"/forms/libreoffice/convert", reader)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, address+"/forms/libreoffice/convert", reader)
 	if err != nil {
 		return err
 	}

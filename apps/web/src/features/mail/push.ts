@@ -29,7 +29,8 @@ export async function enableMailPush() {
     "GET",
     z.object({ publicKey: z.string() })
   )
-  if (!config.publicKey) throw new Error("系统通知未配置，请设置 Web Push 密钥")
+  if (!config.publicKey)
+    throw new Error("系统通知未配置，请由管理员设置推送联系地址")
   await registration()
   const worker = await navigator.serviceWorker.ready
   let subscription = await worker.pushManager.getSubscription()

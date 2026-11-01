@@ -28,24 +28,26 @@ var hashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var bucketPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)
 
 type Options struct {
-	EncryptionKey, KeyFile, ConverterURL string
-	Dialer                               proxy.ContextDialer
-	Routes                               *outbound.Routes
+	EncryptionKey, ConverterURL string
+	Dialer                      proxy.ContextDialer
+	Routes                      *outbound.Routes
+	ConverterAddress            func(context.Context) (string, error)
 }
 
 type Service struct {
-	repo            *assetrepo.Repository
-	cipher          cipher.AEAD
-	converterURL    string
-	dialer          proxy.ContextDialer
-	objectTransport *http.Transport
-	converterClient *http.Client
-	routes          *outbound.Routes
-	thumbnailCursor int64 // 仅旧文件补齐协程读写；当前页入队不依赖此游标。
+	repo             *assetrepo.Repository
+	cipher           cipher.AEAD
+	converterURL     string
+	converterAddress func(context.Context) (string, error)
+	dialer           proxy.ContextDialer
+	objectTransport  *http.Transport
+	converterClient  *http.Client
+	routes           *outbound.Routes
+	thumbnailCursor  int64 // 仅旧文件补齐协程读写；当前页入队不依赖此游标。
 }
 
 func NewService(repo *assetrepo.Repository, options Options) (*Service, error) {
-	s := &Service{repo: repo, converterURL: strings.TrimRight(options.ConverterURL, "/")}
+	s := &Service{repo: repo, converterURL: strings.TrimRight(options.ConverterURL, "/"), converterAddress: options.ConverterAddress}
 	s.dialer = options.Dialer
 	if s.dialer == nil {
 		s.dialer = &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}
@@ -63,7 +65,7 @@ func NewService(repo *assetrepo.Repository, options Options) (*Service, error) {
 	if s.routes == nil {
 		s.routes = outbound.NewRoutes(nil, s.dialer)
 	}
-	key, err := credentialkey.Load(options.EncryptionKey, options.KeyFile)
+	key, err := credentialkey.Decode(options.EncryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("工作台凭证密钥初始化失败: %w", err)
 	}
@@ -86,6 +88,13 @@ func NewService(repo *assetrepo.Repository, options Options) (*Service, error) {
 		}
 	}
 	return s, nil
+}
+
+func (s *Service) converterBase(ctx context.Context) (string, error) {
+	if s.converterAddress != nil {
+		return s.converterAddress(ctx)
+	}
+	return s.converterURL, nil
 }
 
 func validPrefix(value string) bool {
