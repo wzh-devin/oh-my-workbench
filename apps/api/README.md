@@ -101,7 +101,9 @@ migrations/
 
 浏览器会话使用 HttpOnly、SameSite=Lax Cookie，有效期 12 小时；JWT 不写入前端存储。API 调用方可以继续使用 login 返回的 token 作为 Bearer 令牌。写接口检查 Origin/Host，反向代理应保留公网 Host。
 
-API 固定监听 `:11990`；Docker 的宿主机端口通过端口映射控制，例如 `18080:11990`。`COOKIE_SECURE` 默认 true。HTTP 本地开发需明确设置 `COOKIE_SECURE=false`，HTTPS 生产部署设置 true。初次部署应先限制入口并完成管理员配置，再对外开放。Go 仅提供 API，前端静态文件和 SPA fallback 由部署的 Web 服务器提供。
+根目录 [Dockerfile](../../Dockerfile) 和 [docker-compose.yaml](../../docker-compose.yaml) 提供包含前端与文件预览的应用镜像，Docker 统一入口为 `8080`，具体用法见[生产部署](../../README.md#docker-compose-部署)。
+
+API 固定监听 `:11990`；应用镜像通过 Nginx 对外提供 `8080`，例如用 `18080:8080` 调整宿主机端口。`COOKIE_SECURE` 在 API 中默认 true，根 Compose 为 HTTP 访问设为 false；HTTPS 部署设置 true。初次部署应先限制入口并完成管理员配置，再对外开放。Go 仅提供 API，前端静态文件和 SPA fallback 由镜像内 Nginx 或手动部署的 Web 服务器提供。
 
 账号安全页仅保留修改密码。`GET /api/account/security` 返回 `data: {"passwordSet": true}`；`POST /api/account/security/password` 接收 `currentPassword`、`newPassword`（均为 6–24 字符），只修改会话所属用户。确认密码由前端校验，不发送到后端。当前密码错误、相同新密码或输入无效返回 400；每用户每 60 秒最多 10 次改密请求，超限返回 429。并发冲突返回 409，重新登录后重试。
 

@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -21,12 +22,14 @@ const maxSourceBytes = 100 << 20
 const maxOutputBytes = 2 << 20
 
 func main() {
+	address := flag.String("listen", ":8080", "HTTP listen address")
+	flag.Parse()
 	for _, command := range []string{"vipsheader", "vipsthumbnail", "ffmpeg", "ffprobe"} {
 		if _, err := exec.LookPath(command); err != nil {
 			log.Fatal(err)
 		}
 	}
-	server := &http.Server{Addr: ":8080", Handler: renderer(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 35 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 8 << 10}
+	server := &http.Server{Addr: *address, Handler: renderer(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 35 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 8 << 10}
 	log.Fatal(server.ListenAndServe())
 }
 

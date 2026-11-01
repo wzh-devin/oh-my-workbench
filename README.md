@@ -41,6 +41,8 @@
 
 ## 快速开始
 
+使用 Docker 时可直接按 [Docker Compose 部署](#docker-compose-部署)操作，无需在宿主机安装 Node.js、pnpm 或 Go。以下步骤用于本地开发。
+
 ### 环境要求
 
 | 依赖       | 要求                                                                                                        |
@@ -81,7 +83,7 @@ cp -n .env.example .env.local
 | `WORKER_ID`                     | 可选，默认 `1`；多实例部署时各实例使用不同的 `0–1023` 编号 |
 | `COOKIE_SECURE`                 | 本地 HTTP 使用 `false`，生产 HTTPS 使用 `true`              |
 
-API 固定监听 `:11990`，Docker 的宿主机端口通过端口映射控制，例如 `18080:11990`。
+API 固定监听 `:11990`；应用镜像通过 Nginx 对外提供 `8080`，可用 `18080:8080` 调整宿主机端口。
 
 本地部署连接配置统一放在仓库根目录，进程环境变量优先于 `.env.local`。该文件不应提交到版本库。内部密钥首次启动自动生成并保存到 PostgreSQL，后续启动和多实例共用数据库中的值。
 
@@ -112,7 +114,7 @@ API 启动时自动执行 Goose 数据库迁移，无需单独安装迁移 CLI�
 
 在资产页面添加 S3 / MinIO 连接，填写 Endpoint、已有 Bucket、Region、访问凭证和管理前缀。工作台不会自动创建 Bucket，连接账号需具备对应前缀的对象读写与分片上传权限。
 
-Office 预览与缩略图依赖文件转换网关。管理员在“设置 → 通用”配置 API 可访问的转换服务地址，保存后生效；Docker 中填写对应容器网络的地址。仓库提供 [Docker Compose 配置](apps/api/deploy/gotenberg/compose.yaml)，具体启动与连接方法见[资产服务配置](apps/api/internal/modules/assets/README.md#连接与运行)。未部署转换服务时，文件仍可上传和下载。
+应用镜像已内置 Office 预览与缩略图服务，默认地址无需修改。本地开发或手动部署可使用[独立预览 Compose 配置](apps/api/deploy/gotenberg/compose.yaml)，并在“设置 → 通用”填写 API 可访问的转换服务地址；具体方法见[资产服务配置](apps/api/internal/modules/assets/README.md#连接与运行)。未部署转换服务时，文件仍可上传和下载。
 
 ### 网络代理
 
@@ -175,6 +177,75 @@ Go 集成测试使用 `TEST_DATABASE_URL` 和 `TEST_REDIS_ADDR` 指向隔离服�
 
 ## 生产部署
 
+### Docker Compose 部署
+
+应用镜像包含前端、Go API、Gotenberg / LibreOffice、libvips、FFmpeg 和中文字体。文件预览与缩略图在同一应用容器中运行，Compose 默认另外启动 PostgreSQL 和 Redis，也可连接外部服务。
+
+安装支持 BuildKit 的 Docker 与 Docker Compose V2 后，在仓库根目录运行：
+
+```sh
+docker compose up -d --build
+```
+
+访问 <http://localhost:8080> 并创建管理员。首次部署先限制入口，完成管理员初始化后再对公网开放。首次启动自动迁移数据库并生成内部密钥，不需要复制 `.env.example` 或运行 Go 命令。新数据库默认指向镜像内的 `http://127.0.0.1:13039`，无需再启动独立预览服务。对象存储仍在资产页面配置，地址需从应用容器中可达；`127.0.0.1` 表示应用容器自身。
+
+```sh
+# 查看应用日志
+docker compose logs -f app
+
+# 更新源码后重新构建并启动
+docker compose up -d --build
+
+# 停止服务，保留数据卷
+docker compose down
+```
+
+外部只映射应用的 `8080` 端口；修改 `docker-compose.yaml` 中 `ports` 左侧数字即可调整宿主机端口。数据库和 Redis 使用容器内连接，不映射到宿主机。前端深链接、`/api` 反向代理、上传和邮件 SSE 由镜像内的 Nginx 处理。
+
+PostgreSQL 和 Redis 分别保存到 `postgres_data`、`redis_data` 命名卷；`docker compose down -v` 会删除这两个卷。备份时保留 PostgreSQL 的系统配置记录以及对象存储内容。复用已有数据库时，可在“设置 → 通用”将转换地址改为 `http://127.0.0.1:13039`，使用内置预览。
+
+默认应用配额为 2 GiB 内存、2 CPU，临时文件位于有界 `/tmp`。镜像包含 Office 运行环境，首次构建和下载较大；可按负载调整 Compose 的资源限制。
+
+公网 HTTPS 部署时，在应用前放置 TLS 反向代理，保留公网 `Host`，并关闭邮件 SSE 的代理缓冲。通过环境变量重新创建应用容器以启用 Secure Cookie：
+
+```sh
+COOKIE_SECURE=true docker compose up -d
+```
+
+#### 使用外部 PostgreSQL 和 Redis
+
+Compose 可通过现有的 `DATABASE_URL`、`REDIS_ADDR`、`REDIS_PASSWORD` 指定外部服务；未填写时使用内置服务。将外部连接填写到根目录 `.env.local`，例如：
+
+```dotenv
+DATABASE_URL='postgres://user:password@pg-host:5432/workbench?sslmode=require'
+REDIS_ADDR=redis-host:6379
+REDIS_PASSWORD='your-redis-password'
+COOKIE_SECURE=false
+```
+
+Redis 无密码时留空；HTTPS 部署设置 `COOKIE_SECURE=true`。PostgreSQL 数据库与账号需事先创建。然后只启动应用，跳过内置数据库和 Redis：
+
+```sh
+docker compose --env-file .env.local up -d --build --no-deps app
+```
+
+后续更新也使用这条命令。`.env.local` 必须通过 `--env-file` 显式传入 Compose；已有 shell 环境变量优先。主机名必须能从容器中访问，`127.0.0.1` 指应用容器自身；Docker Desktop 连接宿主机服务可使用 `host.docker.internal`。切换连接不会迁移数据或停止已运行的内置服务；已有部署按需先运行 `docker compose stop postgres redis`，原数据卷会保留。
+
+也可直接运行应用镜像，不需要密钥目录挂载：
+
+```sh
+docker build -t oh-my-workbench:local .
+docker run -d --name oh-my-workbench -p 8080:8080 \
+  -e DATABASE_URL='postgres://user:password@db-host:5432/workbench?sslmode=disable' \
+  -e REDIS_ADDR='redis-host:6379' \
+  -e COOKIE_SECURE=false \
+  oh-my-workbench:local
+```
+
+Redis 有密码时另传 `REDIS_PASSWORD`。单实例默认 `WORKER_ID=1`，多实例需分别指定不同编号并连接同一业务数据库。
+
+### 手动部署
+
 在仓库根目录构建并启动 API：
 
 ```sh
@@ -182,15 +253,9 @@ pnpm build
 pnpm start
 ```
 
-Go 服务只提供 API。部署时还需要：
+Go 服务只提供 API。手动部署时还需要托管 `apps/web/dist`、配置 SPA 回退和同域 `/api` 代理，并按[资产配置说明](apps/api/internal/modules/assets/README.md#连接与运行)部署文件转换服务。生产 HTTPS 使用 `COOKIE_SECURE=true`；在公开访问前完成管理员初始化。
 
-1. 使用 Web 服务器托管 `apps/web/dist`，为前端路由配置回退到 `index.html`。
-2. 将同域 `/api` 请求反向代理到 Go 服务，保留公网 `Host` 请求头，并关闭 `/api/mail/events` 的代理缓冲。
-3. 启用 HTTPS，设置 `COOKIE_SECURE=true` 以及数据库和 Redis 连接配置；内部密钥由首次启动自动初始化。
-4. 在公开访问前完成首次管理员初始化；多实例使用不同 `WORKER_ID`，并连接同一业务数据库以复用系统配置。
-5. 持久保存并备份 PostgreSQL 数据与对象存储内容。数据库的系统配置包含内部密钥，恢复时需要一并保留。
-
-`pnpm start` 以 `apps/api` 为工作目录。直接运行二进制时，也需使用该工作目录，以正确读取根目录 `.env.local`。Docker 可直接注入部署连接环境变量；不需要密钥目录挂载。
+`pnpm start` 以 `apps/api` 为工作目录。直接运行二进制时，也需使用该工作目录，以正确读取根目录 `.env.local`。
 
 ## 相关文档
 

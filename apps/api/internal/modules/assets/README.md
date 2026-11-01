@@ -14,7 +14,11 @@ Endpoint 直接来自连接表单。对象请求固定到原始 origin；拨号�
 
 存储账号需具备专用前缀中的读、写、删除、列举对象版本、创建/列举/终止 Multipart Upload 及列举分片权限。工作台不自动创建 Bucket。已有内容时不能修改对象定位信息，禁用连接不删除内容。
 
-Office预览与缩略图共用私有转换网关，管理员在“设置 → 通用”配置转换服务地址，保存后供所有 API 实例读取，无需重启；初始缺省地址为 `http://127.0.0.1:13039`。填写 API 可访问的完整 HTTP/HTTPS origin（协议、主机及可选端口），不包含路径、查询参数或账号密码。在 `apps/api/deploy/gotenberg/` 运行 `docker compose up -d --build` 可启动本机服务；该 Compose 的入口仅绑定宿主机回环地址，API 在容器中或异机部署时需提供可达的私网地址，并在设置页指向该网关。Gotenberg负责Office→PDF，独立渲染容器用libvips负责图片/PDF/纯文本摘要，FFmpeg负责视频截帧，并复用Gotenberg镜像中的Noto CJK字体。转换器禁止外网访问；libvips容器只读、临时目录有界，限制512MiB内存、1CPU、2个并发。服务不可用时原件仍可上传下载，已有缓存仍可读取，待生成任务保留。配置依据见 [Gotenberg配置](https://gotenberg.dev/docs/configuration) 与 [libvips缩略图](https://www.libvips.org/API/current/ctor.Image.thumbnail.html)。
+Office预览与缩略图共用私有转换网关，默认地址为 `http://127.0.0.1:13039`。根目录 Dockerfile 已将 Gotenberg / LibreOffice、libvips、FFmpeg 和 Noto CJK 字体打进应用镜像；用根目录 `docker-compose.yaml` 启动时不需要单独部署转换容器。预览与缩略图入口仅在应用容器的回环地址监听，不经公网 Nginx 转发。新数据库默认即可使用；复用已有数据库时，管理员可在“设置 → 通用”将转换地址改回上述内置地址，保存后供所有 API 实例读取，无需重启。
+
+本地开发可继续在 `apps/api/deploy/gotenberg/` 运行 `docker compose up -d --build`，使用独立预览服务；该 Compose 的入口只绑定宿主机回环地址。使用异机网关时，在通用设置填写 API 可访问的完整 HTTP/HTTPS origin，不含路径、查询或账号密码。
+
+Gotenberg负责Office→PDF，libvips生成图片/PDF/纯文本摘要缩略图，FFmpeg负责视频截帧。转换器禁用外部URL下载、Webhook及LibreOffice外部内容获取；应用镜像中的预览进程共享应用资源配额，保留2个缩略图并发和Office队列上限。独立开发版渲染容器仍使用512MiB、1CPU和有界临时目录。转换不可用时原件仍可上传下载，已有缓存仍可读取，待生成任务保留。配置依据见 [Gotenberg配置](https://gotenberg.dev/docs/configuration) 与 [libvips缩略图](https://www.libvips.org/API/current/ctor.Image.thumbnail.html)。
 
 ## 视图与筛选
 
