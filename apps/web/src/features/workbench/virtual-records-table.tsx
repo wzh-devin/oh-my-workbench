@@ -9,6 +9,7 @@ import {
   DataGridTableHeadRow,
   DataGridTableHeadRowCell,
   DataGridTableRenderedRow,
+  DataGridTableViewport,
 } from "@/components/reui/data-grid/data-grid-table"
 
 /** 沿用ReUI表头/行/列宽，只挂载可见行；CSV长单元格使用实际测量高度。 */
@@ -54,7 +55,7 @@ export function VirtualRecordsTable({
     ? Math.max(0, virtual.getTotalSize() - (items.at(-1)!.end - margin))
     : 0
   return (
-    <div ref={container} className="min-w-0">
+    <DataGridTableViewport viewportRef={container}>
       <DataGridTableBase>
         <DataGridTableHead>
           {table.getHeaderGroups().map((group) => (
@@ -99,6 +100,6 @@ export function VirtualRecordsTable({
           )}
         </DataGridTableBody>
       </DataGridTableBase>
-    </div>
+    </DataGridTableViewport>
   )
 }

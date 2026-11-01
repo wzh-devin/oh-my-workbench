@@ -140,15 +140,45 @@ export const setMailNotifications = (enabled: boolean) =>
     await mailApi.preferences(enabled, signal)
     return true
   })
+// 回执已保存，后续刷新失败也不能让通知继续占位。
+const acknowledgeNotifications = (ids?: string[]) => {
+  reads?.abort()
+  const selected = ids ? new Set(ids) : null
+  const { notifications, notificationCount } = state.overview
+  const remaining = selected
+    ? notifications.filter((notice) => !selected.has(notice.id))
+    : []
+  publish({
+    overview: {
+      ...state.overview,
+      notifications: remaining,
+      notificationCount: selected
+        ? Math.max(
+            0,
+            notificationCount -
+              notifications.filter(
+                (notice) => selected.has(notice.id) && notice.readAt === null
+              ).length
+          )
+        : 0,
+    },
+  })
+}
 export const readMailNotifications = (ids: string[]) =>
   mutate("notifications", async (signal) => {
-    for (let offset = 0; offset < ids.length; offset += 200)
-      await mailApi.readNotifications(ids.slice(offset, offset + 200), signal)
+    for (let offset = 0; offset < ids.length; offset += 200) {
+      const batch = ids.slice(offset, offset + 200)
+      await mailApi.readNotifications(batch, signal)
+      if (signal.aborted) return false
+      acknowledgeNotifications(batch)
+    }
     return true
   })
 export const readAllMailNotifications = () =>
   mutate("notifications", async (signal) => {
     await mailApi.readAllNotifications(signal)
+    if (signal.aborted) return false
+    acknowledgeNotifications()
     return true
   })
 export const loadMoreMailNotifications = () =>
@@ -161,7 +191,8 @@ export const loadMoreMailNotifications = () =>
         notices[notices.length - 1].id,
         signal
       )
-      if (!signal.aborted)
+      // 已读或刷新改变了列表，丢弃基于旧游标的晚到分页。
+      if (!signal.aborted && state.overview.notifications === notices)
         publish({
           overview: {
             ...state.overview,

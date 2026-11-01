@@ -8,8 +8,6 @@ import {
   HardDriveIcon,
   MoreHorizontalIcon,
 } from "lucide-react"
-import type { ColumnDef } from "@tanstack/react-table"
-import type { DataGridFeatures } from "@/components/reui/data-grid/data-grid"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -20,12 +18,11 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { EmptyState, StatusBadge } from "./components"
 import {
-  formatTime,
   type ConnectionStatus,
   type MailAccount,
   type StorageConnection,
 } from "./model"
-import { RecordHint, RecordsGrid } from "./records-grid"
+import { RecordHint, RecordsGrid, type RecordColumn } from "./records-grid"
 import { refreshConnection, useWorkbench } from "./store"
 import {
   saveAssetConnection,
@@ -109,7 +106,7 @@ export function ConnectionsTable({
       )
   }
 
-  const columns: ColumnDef<DataGridFeatures, ConnectionRow>[] = [
+  const columns: RecordColumn<ConnectionRow>[] = [
     {
       accessorKey: "name",
       header: kind === "mail" ? "邮箱名称" : "存储名称",
@@ -166,7 +163,7 @@ export function ConnectionsTable({
                 {row.original.bucket}
               </span>
             ),
-          } satisfies ColumnDef<DataGridFeatures, ConnectionRow>,
+          } satisfies RecordColumn<ConnectionRow>,
         ]
       : []),
     {
@@ -188,12 +185,7 @@ export function ConnectionsTable({
       accessorKey: "lastSync",
       header: "最近更新",
       enableSorting: true,
-      size: 120,
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground tabular-nums">
-          {formatTime(row.original.lastSync)}
-        </span>
-      ),
+      dataType: "datetime",
     },
     {
       id: "actions",

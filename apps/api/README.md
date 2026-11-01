@@ -2,7 +2,7 @@
 
 ## 启动
 
-需要 Go 1.26.5、PostgreSQL 和 Redis。在本目录按 `.env.example` 配置 `.env`，已有进程环境变量优先。
+需要 Go 1.26.5、PostgreSQL 和 Redis。复制项目根目录的 `.env.example` 为根目录的 `.env.local` 并填写配置，已有进程环境变量优先。后端不再保留单独的环境文件；以下 Go 命令从 `apps/api` 运行，根目录的 pnpm 启动命令已使用此工作目录。
 
 ```sh
 go run ./cmd/server
@@ -29,7 +29,7 @@ Goose 自动创建 `goose_db_version` 并记录已执行版本，重复启动只
 
 ### 新增表或字段
 
-1. 修改对应业务模块（如 `internal/modules/auth/model.go`）中的 GORM 模型。
+1. 修改对应业务模块（如 `internal/modules/auth/domain/model.go`）中的 GORM 模型。
 2. 在 `migrations/` 新增时间戳命名的 SQL 文件，例如 `20261029120000_add_user_avatar.sql`。
 3. 编写并审查 SQL，在隔离数据库验证后随代码保留。
 4. 启动服务，Goose 自动应用未完成的迁移。
@@ -72,9 +72,14 @@ internal/
   app/                      启动编排、依赖组装、总路由
   config/                   应用配置
   modules/
-    auth/                   认证：routes、handler、service、repository、model、dto、errors
+    auth/                   认证：管理员初始化、登录和会话
     todos/                  待办：清单、步骤、日期、标签、来源和旧数据导入
     mail/                   邮箱：账号、只读收信、通知、推送和后台监听
+    assets/                 资产：连接、目录、上传、预览和后台恢复
+    <module>/domain/        模型、输入输出、错误和共用纯规则
+    <module>/handler/       HTTP 接口与 routes.go
+    <module>/service/       业务编排、外部服务与后台任务
+    <module>/repository/    数据库访问、查询和事务
   platform/
     database/               PostgreSQL 连接
     cache/                  Redis 连接
@@ -83,6 +88,8 @@ migrations/
   migrations.go             嵌入 SQL 和执行迁移
   *.sql                     版本化 SQL
 ```
+
+模块职责与依赖规范见 [业务模块目录](internal/modules/README.md)。
 
 参考：[Goose](https://github.com/pressly/goose)、[Goose Provider 与 PostgreSQL 锁](https://pressly.github.io/goose/documentation/provider/)。
 
@@ -96,19 +103,23 @@ migrations/
 
 `HTTP_ADDR` 默认 `localhost:11990`；`COOKIE_SECURE` 默认 true。HTTP 本地开发需明确设置 `COOKIE_SECURE=false`，HTTPS 生产部署设置 true。初次部署应先限制入口并完成管理员配置，再对外开放。Go 仅提供 API，前端静态文件和 SPA fallback 由部署的 Web 服务器提供。
 
+账号安全页仅保留修改密码。`GET /api/account/security` 返回 `data: {"passwordSet": true}`；`POST /api/account/security/password` 接收 `currentPassword`、`newPassword`（均为 6–24 字符），只修改会话所属用户。确认密码由前端校验，不发送到后端。当前密码错误、相同新密码或输入无效返回 400；每用户每 60 秒最多 10 次改密请求，超限返回 429。并发冲突返回 409，重新登录后重试。
+
+密码成功写入时原子增加 `omw_user.session_version`；所有旧 Cookie/Bearer 会话随即失效，当前请求换发 HttpOnly Cookie，并在 `data.token` 返回对应 Bearer 令牌。旧 Redis 会话缺省版本为 0，迁移后首次改密前继续有效；已有用户名、密码摘要及业务数据保持不变。新会话先写入 Redis 的未来版本，再以旧哈希和旧版本比较更新数据库，Redis 失败时不修改密码；未提交的未来会话不通过鉴权。迁移 `20261101190000_password_session_version.sql` 由启动自动执行，部署时所有 API 实例须更新，旧版本不识别会话版本。邮箱验证与 MFA 暂缓，不展示未接通的入口。
+
 认证集成测试额外要求 `TEST_REDIS_ADDR`。测试创建独立 PostgreSQL schema，清空指定 Redis 的 database 15，必须使用隔离测试服务；未提供两个测试变量时跳过认证集成测试。
 
 ## 模块路由与数据库边界
 
-`app/router.go` 只创建 Gin、安装公共中间件、组装依赖并挂载模块。具体接口放在模块的 `routes.go`，通过 `Handler.RegisterRoutes(*gin.RouterGroup)` 注册；Todo 挂载到带会话校验的 `/api/todos` 分组。
+`app/router.go` 只创建 Gin、安装公共中间件、组装依赖并挂载模块。具体接口放在模块的 `handler/routes.go`，通过 `Handler.RegisterRoutes(*gin.RouterGroup)` 注册；Todo 挂载到带会话校验的 `/api/todos` 分组。
 
-Handler 负责 HTTP 协议；Service 负责业务校验和流程编排；所有 SQL/GORM 及 Redis 读写必须放在 Repository 文件。事务和用户行锁由 Repository 提供，Service 在事务内调用仓储方法。禁止在 Service 中声明 Repository 方法来绕过文件边界。
+Handler 负责 HTTP 协议；Service 负责业务校验和流程编排；所有 SQL/GORM 及 Redis 读写必须放在 `repository/`。事务和用户行锁由 Repository 提供，Service 在事务内调用仓储方法。禁止在 Service 中声明 Repository 方法来绕过目录边界。
 
 ## 邮箱与来信通知
 
 支持 QQ、Gmail 的 INBOX；用户填写显示名称、完整邮箱地址、QQ 授权码或 Gmail 应用专用密码。主机分别为 imap.qq.com / imap.gmail.com，端口 993，强制校验证书的 TLS。Gmail 应用密码要求账号支持并开启两步验证；本轮不包含 OAuth、自定义服务器、发信或远端删除。
 
-首次部署在 apps/api 中运行下列命令，将输出的三项密钥保存到未跟踪的 .env，并设置 WEB_PUSH_SUBJECT（如 mailto:admin@example.com）：
+首次部署在 apps/api 中运行下列命令，将输出的三项密钥保存到项目根目录未跟踪的 `.env.local`，并设置 WEB_PUSH_SUBJECT（如 mailto:admin@example.com）：
 
 ~~~sh
 go run ./cmd/mailkeys
@@ -116,7 +127,7 @@ go run ./cmd/mailkeys
 
 MAIL_ENCRYPTION_KEY 是 Base64 编码的 32 字节 AES-GCM 密钥；WEB_PUSH_VAPID_PUBLIC_KEY / PRIVATE_KEY 是 Web Push 身份。所有实例使用同一组值，重启不得重新生成。备份这些密钥；丢失邮箱加密密钥后需要重新输入各邮箱授权凭证。Goose 启动时应用新增迁移，已有迁移不修改。未配置密钥时原认证/Todo继续工作，添加/同步邮箱或开启推送返回明确配置错误。
 
-后台与网页生命周期独立。账号启用后每实例每5秒协调监听租约；每账号只有一个有效监听者，每10秒续租，失效或暂停后旧事务拒绝写入。优先采用 IMAP IDLE，每5分钟退出并补查；不支持 IDLE 时每60秒检查。网络错误按2、4、8…60秒退避重连，服务重启根据持久化游标补拉。手动同步复用同一个队列与监听者。
+后台与网页生命周期独立。账号启用后每实例每5秒协调监听租约；每账号只有一个有效监听者，每10秒续租，失效或暂停后旧事务拒绝写入。优先采用 IMAP IDLE，同时每30秒退出并补查，避免服务商漏发实时事件后长时间等待；不支持 IDLE 时同样每30秒检查。网络错误按2、4、8…60秒退避重连，服务重启根据持久化游标补拉。手动同步复用同一个队列与监听者。
 
 初始化先记录 UIDVALIDITY / UIDNEXT 边界，历史回填与实时增量分离，每批最多100封且新信优先。历史回填不产生新信通知。邮件、附件元数据、通知、投递任务和游标同事务提交，失败可重放；唯一键阻止重复邮件和通知。UIDVALIDITY变化后建立当前代次索引，旧缓存保留且不混入普通列表。
 
@@ -163,7 +174,9 @@ Web Push由两条后台消费者领取数据库任务，失败指数退避，最
 
 生产必须使用 HTTPS，浏览器仅在用户点击“开启系统通知”后请求授权。Service Worker 路径 /mail-worker.js，作用域 /，不缓存API或邮件；反向代理应关闭 /api/mail/events 的缓冲。网页关闭后仍可接收推送，浏览器退出、休眠、系统勿扰或推送网络受限时不保证即时到达。服务器需要能访问对应IMAP及浏览器推送服务，Gmail或部分推送服务的网络可达性需在实际部署环境验证。
 
-IMAP 默认直连，不读取桌面系统代理。需要代理时配置 `MAIL_PROXY_URL=socks5h://127.0.0.1:7890`（也支持 `socks5://`）并重启 API；留空恢复直连。该配置统一覆盖账号验证、正文读取、附件下载和后台同步，不影响 Web Push 的 HTTP 传输。代理不可用时明确报错，不回退直连。拨号总上限15秒，最多1秒解析本地候选地址，以250ms间隔竞争 TLS 连接，始终校验 QQ/Gmail 厂商域名证书；未胜出的连接和请求取消后的连接及时关闭。无效代理配置在启动时失败，错误不包含代理凭证。
+出站代理在“设置 → 网络代理”中按当前用户分别配置 QQ 邮箱、Gmail、系统通知、对象存储和文件转换，支持 `socks5://` / `socks5h://`。未配置或恢复直连仅影响对应服务，无需重启 API；不再读取 `MAIL_PROXY_URL` 或 `OUTBOUND_PROXY_URL`。回环/私有 IP 与 localhost、local/internal/lan 域名直连；PostgreSQL、Redis 和浏览器连接沿用原配置。代理失败不回退直连；TLS、DNS/IP 与目标限制保持生效。
+
+`omw_system_setting` 统一存储配置：`id,user_id,key,value,version,created_at,updated_at`，唯一索引为 `(user_id,key)`。代理使用 `network.proxy.qq/gmail/push/storage/converter` 键，敏感值 AES-GCM 加密，复用 `.local/asset-credentials.key`，响应仅回显去除凭证的地址；必须持久化此密钥文件。通用设置 Repository 只负责按键存取和版本保护，业务校验与值编码由调用方负责。旧代理表通过后续迁移原位转换，保留现有密文和版本；回滚遇到新增非代理设置会拒绝执行以避免丢失数据。认证接口为 `GET /api/settings/proxies` 和 `PUT /api/settings/proxies/:service`，保存需传 `proxyUrl`、`version`，冲突返回 409。
 
 ## Todo
 

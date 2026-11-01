@@ -1,4 +1,11 @@
-import { Fragment, useEffect, useState } from "react"
+import {
+  Fragment,
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react"
 import { toast } from "sonner"
 import { Link, useSearchParams } from "react-router"
 import { cn } from "cn"
@@ -24,8 +31,7 @@ import {
   UploadIcon,
   XIcon,
 } from "lucide-react"
-import type { ColumnDef, SortingState } from "@tanstack/react-table"
-import type { DataGridFeatures } from "@/components/reui/data-grid/data-grid"
+import type { CellContext, SortingState } from "@tanstack/react-table"
 import { RuleFilters } from "@/components/shared/rule-filters"
 import { createFilterQuery } from "@/components/reui/filters/filters-query"
 import {
@@ -53,12 +59,11 @@ import {
   WorkbenchScreen,
 } from "@/features/workbench/components"
 import { ConnectionDialog } from "@/features/workbench/dialogs"
+import { formatSize, type StorageConnection } from "@/features/workbench/model"
 import {
-  formatSize,
-  formatTime,
-  type StorageConnection,
-} from "@/features/workbench/model"
-import { RecordsGrid } from "@/features/workbench/records-grid"
+  RecordsGrid,
+  type RecordColumn,
+} from "@/features/workbench/records-grid"
 import {
   downloadAsset,
   refreshConnection,
@@ -75,6 +80,9 @@ import {
 import { recordOpened, starEntries, retryAssetThumbnail } from "../store"
 import { useAssetOperations } from "../use-asset-operations"
 import { droppedFiles } from "../file-drop"
+import type { DataGridFeatures } from "@/components/reui/data-grid/data-grid"
+import { fileNameParts } from "../file-name"
+import { InlineRename, type RenameDraft } from "./inline-rename"
 import { AssetActions } from "./asset-actions"
 import { AssetThumbnail } from "./asset-thumbnail"
 import {
@@ -112,6 +120,18 @@ const VIEW_NAMES: Record<string, string> = {
 }
 
 // 下拉排序与表头共享同一个排序状态，切换布局不改变查询顺序。
+// 列渲染器身份稳定，查询刷新与操作状态变化不会卸载菜单或重命名草稿。
+const AssetCellContext = createContext<{
+  name: (entry: AssetEntry) => ReactNode
+  actions: (entry: AssetEntry) => ReactNode
+} | null>(null)
+function AssetNameCell({ row }: CellContext<DataGridFeatures, AssetEntry>) {
+  return useContext(AssetCellContext)?.name(row.original)
+}
+function AssetActionsCell({ row }: CellContext<DataGridFeatures, AssetEntry>) {
+  return useContext(AssetCellContext)?.actions(row.original)
+}
+
 const SORT_OPTIONS = [
   { value: "name", label: "名称升序", column: "name", desc: false },
   { value: "name-desc", label: "名称降序", column: "name", desc: true },
@@ -204,6 +224,7 @@ export function Assets() {
   const [transfersOpen, setTransfersOpen] = useState(false)
   const [action, setAction] = useState<AssetAction | null>(null)
   const [deleteIds, setDeleteIds] = useState<string[] | null>(null)
+  const [renaming, setRenaming] = useState<RenameDraft | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [fileError, setFileError] = useState(false)
   const { run, download, remove, restore, busy, error, clearError } =
@@ -345,6 +366,7 @@ export function Assets() {
     setSelectedIds([])
 
     setSorting([])
+    setRenaming(null)
     clearError()
     setParams(next)
   }
@@ -410,6 +432,17 @@ export function Assets() {
       entry={entry}
       trash={view === "trash"}
       onAction={setAction}
+      onRename={(record) =>
+        setRenaming({
+          id: record.id,
+          value:
+            record.kind === "file"
+              ? fileNameParts(record.name).stem
+              : record.name,
+          pending: false,
+          error: "",
+        })
+      }
       onDownload={download}
       onStar={(record) => {
         void run(() => starEntries([record.id], !record.starred))
@@ -425,9 +458,39 @@ export function Assets() {
     />
   )
   const nameFor = (entry: AssetEntry, preview = false) => (
-    <div className="flex min-w-0 items-center gap-2">
-      {!preview && <EntryIcon entry={entry} />}
-      {view === "trash" ? (
+    <div
+      className={cn(
+        "flex min-w-0 items-center gap-2",
+        preview && renaming?.id === entry.id && "flex-col"
+      )}
+    >
+      {(!preview || renaming?.id === entry.id) && (
+        <EntryIcon entry={entry} large={preview} />
+      )}
+      {renaming?.id === entry.id ? (
+        <InlineRename
+          key={entry.id}
+          entry={entry}
+          draft={renaming}
+          onChange={(changes) =>
+            setRenaming((current) =>
+              current?.id === entry.id ? { ...current, ...changes } : current
+            )
+          }
+          onClose={() => {
+            setRenaming((current) =>
+              current?.id === entry.id ? null : current
+            )
+            requestAnimationFrame(() =>
+              document
+                .querySelector<HTMLElement>(
+                  `[data-asset-name-id="${entry.id}"]`
+                )
+                ?.focus()
+            )
+          }}
+        />
+      ) : view === "trash" ? (
         <Button
           type="button"
           size="sm"
@@ -449,6 +512,7 @@ export function Assets() {
               : "truncate"
           )}
           title={entry.name}
+          data-asset-name-id={entry.id}
           to={entryHref(entry)}
           onClick={(event) => {
             if (
@@ -474,7 +538,7 @@ export function Assets() {
       )}
     </div>
   )
-  const columns: ColumnDef<DataGridFeatures, AssetEntry>[] = [
+  const columns: RecordColumn<AssetEntry>[] = [
     {
       id: "select",
       header: () => selectAll,
@@ -495,7 +559,7 @@ export function Assets() {
       enableSorting: true,
       size: 300,
       meta: { fillWidth: true },
-      cell: ({ row }) => nameFor(row.original),
+      cell: AssetNameCell,
     },
     {
       id: "kind",
@@ -519,77 +583,24 @@ export function Assets() {
         </span>
       ),
     },
-    ...(connectionId === "all"
-      ? ([
-          {
-            accessorKey: "connectionId",
-            header: "所属存储",
-            size: 160,
-            cell: ({ row }) => (
-              <span
-                className="block truncate text-sm text-muted-foreground"
-                title={
-                  data.connections.find(
-                    (source) => source.id === row.original.connectionId
-                  )?.name
-                }
-              >
-                {data.connections.find(
-                  (source) => source.id === row.original.connectionId
-                )?.name ?? "—"}
-              </span>
-            ),
-          },
-          {
-            id: "bucket",
-            header: "Bucket",
-            size: 160,
-            cell: ({ row }) => (
-              <span
-                className="block truncate text-sm text-muted-foreground"
-                title={
-                  data.connections.find(
-                    (source) => source.id === row.original.connectionId
-                  )?.bucket
-                }
-              >
-                {data.connections.find(
-                  (source) => source.id === row.original.connectionId
-                )?.bucket ?? "—"}
-              </span>
-            ),
-          },
-        ] as ColumnDef<DataGridFeatures, AssetEntry>[])
-      : []),
-    ...(searching || view !== "files"
-      ? [
-          {
-            id: "path",
-            header: "所在位置",
-            size: 180,
-            cell: ({ row }: { row: { original: AssetEntry } }) => (
-              <Button
-                type="button"
-                size="sm"
-                variant="link"
-                className="max-w-full min-w-0 justify-start font-normal"
-                onClick={() => locate(row.original)}
-              >
-                <span
-                  className="truncate"
-                  title={folderTrail(data, row.original.parentId)
-                    .map((entry) => entry.name)
-                    .join(" / ")}
-                >
-                  {folderTrail(data, row.original.parentId)
-                    .map((entry) => entry.name)
-                    .join(" / ") || "根目录"}
-                </span>
-              </Button>
-            ),
-          },
-        ]
-      : []),
+    {
+      accessorKey: "connectionId",
+      header: "所属存储",
+      size: 160,
+      cell: ({ row }) => {
+        const source = data.connections.find(
+          (connection) => connection.id === row.original.connectionId
+        )
+        return (
+          <span
+            className="block truncate text-sm text-muted-foreground"
+            title={source?.name}
+          >
+            {source?.name ?? "—"}
+          </span>
+        )
+      },
+    },
     {
       id: "time",
       accessorFn: (entry) =>
@@ -605,25 +616,14 @@ export function Assets() {
           : view === "recent"
             ? "访问时间"
             : "修改时间",
-      size: 120,
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground tabular-nums">
-          {formatTime(
-            view === "trash"
-              ? row.original.trashedAt
-              : view === "recent"
-                ? row.original.lastOpenedAt
-                : (row.original.updatedAt ?? row.original.createdAt)
-          )}
-        </span>
-      ),
+      dataType: "datetime",
     },
     {
       id: "actions",
       header: "操作",
       size: 96,
       meta: { align: "center" },
-      cell: ({ row }) => actionsFor(row.original),
+      cell: AssetActionsCell,
     },
   ]
   const clearFilters = () => {
@@ -696,7 +696,6 @@ export function Assets() {
               !selected.length &&
               !error &&
               !(fileError && fileId) &&
-              !(savedView && result.status === "error") &&
               connection?.status !== "error"
             }
           />
@@ -825,12 +824,6 @@ export function Assets() {
             重试连接
           </DropdownMenuItem>
         )}
-        {savedView && result.status === "error" && (
-          <DropdownMenuItem onClick={() => setEditingView(savedView)}>
-            <PencilIcon aria-hidden="true" />
-            编辑视图
-          </DropdownMenuItem>
-        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -850,7 +843,7 @@ export function Assets() {
       />
       <RuleFilters
         disabled={needsStorage || invalidLocation}
-        fields={assetRuleFields(overview.connections)}
+        fields={assetRuleFields(overview.connections, overview.folders)}
         query={query}
         onQueryChange={(next) => {
           setQuery(next)
@@ -858,7 +851,7 @@ export function Assets() {
           setSelectedIds([])
         }}
       />
-      {view !== "recent" && view !== "trash" && (
+      {layout === "grid" && view !== "recent" && view !== "trash" && (
         <div className="flex items-center gap-1">
           <ArrowDownAZIcon
             className="size-4 text-muted-foreground"
@@ -910,7 +903,7 @@ export function Assets() {
     </>
   )
   return (
-    <>
+    <AssetCellContext value={{ name: nameFor, actions: actionsFor }}>
       <AssetNavigation
         data={data}
         status={status}
@@ -921,13 +914,45 @@ export function Assets() {
         onAdd={() => setConfiguring("new")}
         views={overview.views}
         onAddView={() => setEditingView("new")}
-        onEditView={setEditingView}
-        onDeleteView={setDeletingView}
       />
       <WorkbenchScreen
         title="资产"
         actions={
           <>
+            {savedView && (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label="更多视图操作"
+                      title="更多操作"
+                      disabled={status !== "ready"}
+                    />
+                  }
+                >
+                  <MoreHorizontalIcon aria-hidden="true" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setEditingView(savedView)}>
+                    <PencilIcon aria-hidden="true" />
+                    编辑视图
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    variant="destructive"
+                    disabled={overview.views.length <= 1}
+                    onClick={() => setDeletingView(savedView)}
+                  >
+                    <Trash2Icon aria-hidden="true" />
+                    {overview.views.length <= 1
+                      ? "至少保留一个视图"
+                      : "删除视图"}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             <UploadTransfers
               open={transfersOpen}
               onOpenChange={setTransfersOpen}
@@ -1339,6 +1364,6 @@ export function Assets() {
           onDownload={download}
         />
       )}
-    </>
+    </AssetCellContext>
   )
 }

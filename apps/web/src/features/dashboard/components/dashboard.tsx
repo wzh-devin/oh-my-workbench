@@ -9,9 +9,7 @@ import {
   PlusIcon,
   RefreshCwIcon,
 } from "lucide-react"
-import type { ColumnDef } from "@tanstack/react-table"
 import { Badge } from "@/components/reui/badge"
-import type { DataGridFeatures } from "@/components/reui/data-grid/data-grid"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -21,8 +19,11 @@ import {
   EmptyState,
   WorkbenchScreen,
 } from "@/features/workbench/components"
-import { formatSize, formatTime } from "@/features/workbench/model"
-import { RecordsGrid } from "@/features/workbench/records-grid"
+import { formatSize } from "@/features/workbench/model"
+import {
+  RecordsGrid,
+  type RecordColumn,
+} from "@/features/workbench/records-grid"
 import { refreshConnection, useWorkbench } from "@/features/workbench/store"
 import { activeAssets, assetHref } from "@/features/assets/asset-rules"
 import { StatCard, SegmentBar } from "./stat-cards"
@@ -125,7 +126,7 @@ export function Dashboard() {
           .includes(search.toLowerCase())
     )
     .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))
-  const columns: ColumnDef<DataGridFeatures, RecentRecord>[] = [
+  const columns: RecordColumn<RecentRecord>[] = [
     {
       accessorKey: "title",
       header: "内容",
@@ -205,12 +206,7 @@ export function Dashboard() {
       accessorKey: "timestamp",
       header: "记录时间",
       enableSorting: true,
-      size: 120,
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground tabular-nums">
-          {formatTime(row.original.timestamp)}
-        </span>
-      ),
+      dataType: "datetime",
     },
   ]
   return (

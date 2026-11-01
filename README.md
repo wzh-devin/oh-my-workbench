@@ -4,13 +4,13 @@ A workflow automation workspace built with Vite, React 19, TypeScript, Tailwind 
 
 The personal workbench includes a Dashboard, Todo lists, QQ/Gmail inboxes, S3-compatible file assets and a React Flow resource overview. Todo, Mail and Assets use the authenticated Go API and PostgreSQL. Mail supports encrypted credentials, background IMAP synchronization and Web Push notifications while pages are closed. Assets store immutable file bytes in S3/MinIO, with resumable uploads, saved views and private Office previews. See [asset configuration and recovery](apps/api/internal/modules/assets/README.md); legacy browser files remain available through explicit import. See [API setup, mailbox tables and notification flow](apps/api/README.md#邮箱与来信通知) before connecting a real mailbox; existing browser samples are preserved and are not uploaded.
 
-The existing workflow/agent editors remain available. On first deployment, `/login` detects an uninitialized system and opens an administrator setup dialog. After setup, sign in with that administrator's username and password. Sessions use HttpOnly cookies and Redis; refreshing restores the session, protected routes require authentication, and `退出登录` revokes the server session without deleting workbench records. Google/GitHub entries remain disabled until OAuth is implemented. Personal display preferences and workbench data retain their existing local persistence. Account-security forms still use the separate, currently unavailable `/api/account/security` contract.
+The existing workflow/agent editors remain available. On first deployment, `/login` detects an uninitialized system and opens an administrator setup dialog. After setup, sign in with that administrator's username and password. Sessions use HttpOnly cookies and Redis; refreshing restores the session, protected routes require authentication, and `退出登录` revokes the server session without deleting workbench records. Google/GitHub entries remain disabled until OAuth is implemented. Personal display preferences and workbench data retain their existing local persistence. Account security supports password changes through `/api/account/security`: verify the current password, save the new Argon2 hash, replace the current session and invalidate older sessions. Email verification and MFA are deferred.
 
 ## Requirements
 
 - Node.js matching `.nvmrc` (22.23.4) and `engines.node` in the root package.
 - pnpm 12.6.0, pinned by `packageManager`.
-- Go 1.26.5, PostgreSQL and Redis. Copy `apps/api/.env.example` to `apps/api/.env` and configure the connections and JWT secret before starting.
+- Go 1.26.5, PostgreSQL and Redis. Copy the root `.env.example` to `.env.local` and configure the connections and JWT secret before starting. All local environment configuration stays at the repository root; existing process environment variables take precedence.
 
 ```sh
 nvm use
@@ -21,7 +21,7 @@ pnpm dev
 
 Open http://127.0.0.1:3000. `/` redirects to `/dashboard`.
 
-`pnpm dev` runs both applications through pnpm workspace scripts: Vite on port 3000 and Go on `localhost:11990`. `apps/api/package.json` supplies the Go development command for this workspace entry. Vite proxies `/api` to Go, so browser requests use the same origin. Both processes stop with Ctrl+C. `API_PROXY_TARGET` can override the Vite proxy target when testing a separate backend. The frontend needs no runtime API keys.
+`pnpm dev` runs both applications through pnpm workspace scripts: Vite on port 3000 and Go on `localhost:11990`. `apps/api/package.json` supplies the Go development command for this workspace entry. Vite proxies `/api` to Go, so browser requests use the same origin. Both processes stop with Ctrl+C. `API_PROXY_TARGET` can override the Vite proxy target when testing a separate backend. The frontend needs no runtime API keys. Configure outbound SOCKS5 proxies separately in **Settings → Network proxy** for QQ, Gmail, system notifications, object storage and file conversion. Settings take effect without restarting the API and are stored under `network.proxy.*` keys in `omw_system_setting`. Loopback/private addresses stay direct.
 
 ## Layout
 
@@ -115,7 +115,7 @@ pnpm start
 
 Serve `apps/web/dist` with an HTTPS web server that falls back to `index.html` for client routes and proxies `/api` to the Go service. Go serves API routes only. Configure `COOKIE_SECURE=true`, a strong `JWT_SECRET`, and internal database/Redis endpoints in production. `HTTP_ADDR` overrides the API listen address; the default binds to `localhost:11990`. Preserve the public `Host` header in the reverse proxy so same-origin checks match browser requests.
 
-For local HTTP development, set `COOKIE_SECURE=false` as shown in `apps/api/.env.example`; the default is Secure. Complete initial administrator setup before exposing a fresh deployment publicly. The first successful initialization wins, and subsequent initialization attempts return HTTP 409. Existing administrators also keep initialization closed.
+For local HTTP development, set `COOKIE_SECURE=false` as shown in the root `.env.example`; the default is Secure. Complete initial administrator setup before exposing a fresh deployment publicly. The first successful initialization wins, and subsequent initialization attempts return HTTP 409. Existing administrators also keep initialization closed.
 
 ## Routes and API
 
@@ -150,7 +150,13 @@ cd apps/web
 pnpm exec shadcn add button
 ```
 
-The root `.env.example` documents the optional `REUI_LICENSE_KEY` needed to install premium ReUI components. Copy it to `apps/web/.env.local` only when installing those components, or supply the key through your shell. Existing root `.env.local` is preserved and ignored. Vite does not expose this key to the browser; never use a `VITE_` prefix for secrets. API runtime environment is managed separately by the Go process.
+The root `.env.local` also holds the optional `REUI_LICENSE_KEY` needed to install premium ReUI components. To load it when installing, run the following from `apps/web` (or supply the key through your shell):
+
+```sh
+pnpm exec node --env-file=../../.env.local node_modules/shadcn/dist/index.js add <component>
+```
+
+Keep `.env.local` ignored and never use a `VITE_` prefix for secrets. The Go process reads API configuration from this root file; Vite keeps its existing environment directory and does not load it into the browser.
 
 See `AGENTS.md` and `.agents/skills/reui/SKILL.md` for the project rules, and `LICENSE.md` for the template license.
 

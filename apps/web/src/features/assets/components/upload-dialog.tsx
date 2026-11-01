@@ -20,6 +20,7 @@ import { droppedFiles } from "../file-drop"
 import { assetName, folderTrail, trashedEntryIds } from "../asset-rules"
 import { createFolder, getAssets } from "../store"
 import { enqueueUploads } from "../upload-queue"
+import { FolderPicker } from "./folder-picker"
 
 /** 文件选择与持久化队列分开，关闭弹窗保留传输和恢复入口。 */
 export function UploadDialog({
@@ -160,20 +161,11 @@ export function UploadDialog({
             </Field>
             <Field>
               <FieldLabel>目标目录</FieldLabel>
-              <Choice
+              <FolderPicker
                 value={destinationId}
                 onChange={setDestinationId}
-                label="目标目录"
                 disabled={busy}
-                options={[
-                  { value: "root", label: "根目录" },
-                  ...folders.map((entry) => ({
-                    value: entry.id,
-                    label: folderTrail(data, entry.id)
-                      .map((ancestor) => ancestor.name)
-                      .join(" / "),
-                  })),
-                ]}
+                folders={folders}
               />
             </Field>
           </div>

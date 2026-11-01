@@ -15,8 +15,8 @@ flowchart LR
   Cache --> Text[纯文本回退]
 ```
 
-1. API `imap.go` 排除附件，优先 HTML 正文，处理 transfer encoding 和 charset，限制解码后正文为 8 MiB。保留原始 HTML；文本用于摘要、待办转换和回退。
-2. `repository.go` 保存原始 HTML 和文本，`body_format_version = 2`。`service.go` 命中任何版本的正文缓存都立即返回；旧格式由 `body_cache.go` 后台升级，单消费者、32 条排队上限、相同邮件去重、每次最长 45 秒，并随服务停止取消。升级失败保留原缓存，下次打开可重试；首次没有正文缓存才同步读取远端。无需数据库迁移。
+1. API `mail/service/imap.go` 排除附件，优先 HTML 正文，处理 transfer encoding 和 charset，限制解码后正文为 8 MiB。保留原始 HTML；文本用于摘要、待办转换和回退。
+2. 后端 `mail/repository/repository.go` 保存原始 HTML 和文本，`body_format_version = 2`。`mail/service/service.go` 命中任何版本的正文缓存都立即返回；旧格式由 `mail/service/body_cache.go` 后台升级，单消费者、32 条排队上限、相同邮件去重、每次最长 45 秒，并随服务停止取消。升级失败保留原缓存，下次打开可重试；首次没有正文缓存才同步读取远端。无需数据库迁移。
 3. `mail-document.ts` 是前端唯一 HTML 处理入口。DOMPurify 使用官方 HTML profile，清理脚本、事件属性、危险协议和嵌套文档；未知包装元素的可读内容由库保留。业务层仅禁用邮件中的表单、媒体、外部样式和导航控制。
 4. 保留邮件的 `html/head/body`、样式块、内联样式和语义结构。只注入可信 charset、CSP、referrer、viewport 和基础样式，不把完整文档拼进第二个 body。
 5. 外链限制为 HTTP、HTTPS、mailto 和 tel；外部链接统一新窗口及 `noopener noreferrer`，页内锚点保留。相对外链不允许落到工作台路由。
@@ -54,4 +54,4 @@ flowchart LR
 
 TCP/TLS 拨号失败返回独立 `ErrNetwork`，HTTP 状态仍为 503，界面沿用现有错误 Toast。服务端只记录厂商和连接错误，不记录授权凭证。若同封邮件不同格式均在读取前超时，应先检查后端所在网络对 `imap.gmail.com:993` / `imap.qq.com:993` 的可达性。浏览器能访问网页、系统存在代理，都不能证明 API 进程的 IMAP 连接可用；当前实现不自动采用系统代理。
 
-网络需要代理时，在 API 的环境中显式设置 `MAIL_PROXY_URL=socks5h://127.0.0.1:7890` 后重启后端；地址应指向后端可访问的 SOCKS5 服务，留空仍直连。`transport.go` 是账号验证、正文首次读取/后台升级、附件与同步的唯一拨号入口；默认保留厂商域名交给代理解析，同时在最多 1 秒的本地 DNS 查询后，将候选 IP 按 250ms 间隔加入 TLS 连接竞争。总拨号上限为 15 秒，首个通过厂商证书校验的连接胜出，其余连接随请求取消关闭。不会因设置代理而跳过 TLS 校验，也不会悄悄回退到直连。
+网络需要代理时，在“设置 → 网络代理”中分别配置 QQ 邮箱、Gmail 或系统通知的 SOCKS5 地址，按当前用户生效，无需重启 API；未配置或恢复直连只影响对应服务。本地/私有 IP 与 localhost、local/internal/lan 域名保持直连。`transport.go` 是账号验证、正文首次读取/后台升级、附件与同步的唯一拨号入口；默认保留厂商域名交给代理解析，同时在最多 1 秒的本地 DNS 查询后，将候选 IP 按 250ms 间隔加入 TLS 连接竞争。总拨号上限为 15 秒，首个通过厂商证书校验的连接胜出，其余连接随请求取消关闭。不会因设置代理而跳过 TLS 校验，也不会悄悄回退到直连。

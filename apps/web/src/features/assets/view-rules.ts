@@ -5,6 +5,8 @@ import type {
   FilterQuery,
 } from "@/components/reui/filters/filters-types"
 import { compileRule } from "@/lib/rules/compile"
+import { folderTrail } from "./asset-rules"
+import type { RemoteEntry } from "./model"
 import type {
   Operand,
   RuleDocument,
@@ -17,6 +19,7 @@ const schema: RuleSchema = {
     name: "string",
     kind: "string",
     connectionId: "string",
+    parentId: "string",
     size: "number",
     starred: "boolean",
     createdAt: "date",
@@ -38,7 +41,8 @@ const comparison = [
 ]
 /** 列表与视图表单共用字段，不另建筛选面板或分叉文案。 */
 export const assetRuleFields = (
-  connections: { id: string; name: string }[]
+  connections: { id: string; name: string }[],
+  folders: RemoteEntry[]
 ): FilterField[] => [
   {
     id: "name",
@@ -78,6 +82,25 @@ export const assetRuleFields = (
       value: connection.id,
       label: connection.name,
     })),
+  },
+  {
+    id: "parentId",
+    label: "路径",
+    type: "select",
+    placeholder: "选择路径",
+    operators: equality,
+    options: [
+      { value: "root", label: "根目录" },
+      ...folders.map((folder) => ({
+        value: folder.id,
+        label: `${connections.find((source) => source.id === folder.connectionId)?.name ?? "存储"} / ${folderTrail(
+          { assetFolders: folders },
+          folder.id
+        )
+          .map((record) => record.name)
+          .join(" / ")}`,
+      })),
+    ],
   },
   {
     id: "size",

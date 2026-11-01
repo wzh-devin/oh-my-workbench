@@ -5,18 +5,27 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/devin/oh-my-workbench/api/internal/modules/assets"
-	"github.com/devin/oh-my-workbench/api/internal/modules/auth"
-	"github.com/devin/oh-my-workbench/api/internal/modules/mail"
-	"github.com/devin/oh-my-workbench/api/internal/modules/todos"
-	"github.com/devin/oh-my-workbench/api/internal/shared/response"
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
+	redis "github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
+
+	assethandler "github.com/devin/oh-my-workbench/api/internal/modules/assets/handler"
+	assetservice "github.com/devin/oh-my-workbench/api/internal/modules/assets/service"
+	authhandler "github.com/devin/oh-my-workbench/api/internal/modules/auth/handler"
+	authrepo "github.com/devin/oh-my-workbench/api/internal/modules/auth/repository"
+	authservice "github.com/devin/oh-my-workbench/api/internal/modules/auth/service"
+	mailhandler "github.com/devin/oh-my-workbench/api/internal/modules/mail/handler"
+	mailservice "github.com/devin/oh-my-workbench/api/internal/modules/mail/service"
+	settingshandler "github.com/devin/oh-my-workbench/api/internal/modules/settings/handler"
+	settingsservice "github.com/devin/oh-my-workbench/api/internal/modules/settings/service"
+	todohandler "github.com/devin/oh-my-workbench/api/internal/modules/todos/handler"
+	todorepo "github.com/devin/oh-my-workbench/api/internal/modules/todos/repository"
+	todoservice "github.com/devin/oh-my-workbench/api/internal/modules/todos/service"
+	"github.com/devin/oh-my-workbench/api/internal/shared/response"
 )
 
-func newRouter(db *gorm.DB, rdb *redis.Client, mailService *mail.Service, assetServices ...*assets.Service) *gin.Engine {
-	handler := auth.NewHandler(auth.NewService(auth.NewRepository(db, rdb)))
+func newRouter(db *gorm.DB, rdb *redis.Client, mailService *mailservice.Service, proxySettings *settingsservice.ProxyService, assetServices ...*assetservice.Service) *gin.Engine {
+	handler := authhandler.NewHandler(authservice.NewService(authrepo.NewRepository(db, rdb)))
 	r := gin.New()
 	r.Use(gin.Recovery())
 	_ = r.SetTrustedProxies(nil)
@@ -39,11 +48,15 @@ func newRouter(db *gorm.DB, rdb *redis.Client, mailService *mail.Service, assetS
 		c.Next()
 	})
 	handler.RegisterRoutes(api.Group("/auth"))
-	todoHandler := todos.NewHandler(todos.NewService(todos.NewRepository(db)))
+	handler.RegisterSecurityRoutes(api.Group("/account/security", handler.RequireSession))
+	todoHandler := todohandler.NewHandler(todoservice.NewService(todorepo.NewRepository(db)))
 	todoHandler.RegisterRoutes(api.Group("/todos", handler.RequireSession))
-	mail.NewHandler(mailService).RegisterRoutes(api.Group("/mail", handler.RequireSession))
+	mailhandler.NewHandler(mailService).RegisterRoutes(api.Group("/mail", handler.RequireSession))
+	if proxySettings != nil {
+		settingshandler.NewProxyHandler(proxySettings).RegisterRoutes(api.Group("/settings/proxies", handler.RequireSession))
+	}
 	if len(assetServices) > 0 {
-		assets.NewHandler(assetServices[0]).RegisterRoutes(api.Group("/assets", handler.RequireSession))
+		assethandler.NewHandler(assetServices[0]).RegisterRoutes(api.Group("/assets", handler.RequireSession))
 	}
 	return r
 }

@@ -1,13 +1,14 @@
 import type { ReactNode } from "react"
 import {
   BellIcon,
+  NetworkIcon,
   SettingsIcon,
   ShieldCheckIcon,
   UserRoundIcon,
 } from "lucide-react"
 
 export type SettingsPanelValue =
-  "general" | "profile" | "notifications" | "security"
+  "general" | "profile" | "notifications" | "security" | "proxy"
 export type SettingsItem = {
   value: SettingsPanelValue
   label: string
@@ -43,6 +44,11 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
         value: "security",
         label: "账号安全",
         icon: <ShieldCheckIcon aria-hidden="true" />,
+      },
+      {
+        value: "proxy",
+        label: "网络代理",
+        icon: <NetworkIcon aria-hidden="true" />,
       },
     ],
   },

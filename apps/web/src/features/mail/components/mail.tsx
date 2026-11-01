@@ -11,13 +11,8 @@ import {
   RefreshCwIcon,
   StarIcon,
 } from "lucide-react"
-import type {
-  ColumnDef,
-  PaginationState,
-  SortingState,
-} from "@tanstack/react-table"
+import type { PaginationState, SortingState } from "@tanstack/react-table"
 import { Badge } from "@/components/reui/badge"
-import type { DataGridFeatures } from "@/components/reui/data-grid/data-grid"
 import { RuleFilters } from "@/components/shared/rule-filters"
 import { createFilterQuery } from "@/components/reui/filters/filters-query"
 import { Button } from "@/components/ui/button"
@@ -29,7 +24,11 @@ import {
   WorkbenchScreen,
 } from "@/features/workbench/components"
 import { ConnectionsTable } from "@/features/workbench/connections-table"
-import { RecordHint, RecordsGrid } from "@/features/workbench/records-grid"
+import {
+  RecordHint,
+  RecordsGrid,
+  type RecordColumn,
+} from "@/features/workbench/records-grid"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -38,7 +37,6 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { mailFilterFields } from "./filter-fields"
 import { useMessagePage } from "../use-message-page"
-import { formatMailTime } from "../model"
 import { mailFilterRule } from "../filters"
 import type { Message } from "../model"
 import {
@@ -128,7 +126,7 @@ export function Mail() {
     ))
       void syncMailAccount(account.id)
   }
-  const columns: ColumnDef<DataGridFeatures, Message>[] = [
+  const columns: RecordColumn<Message>[] = [
     {
       id: "starred",
       header: "星标",
@@ -218,13 +216,8 @@ export function Mail() {
     {
       accessorKey: "receivedAt",
       header: "收件时间",
-      size: 200,
       enableSorting: true,
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground tabular-nums">
-          {formatMailTime(row.original.receivedAt)}
-        </span>
-      ),
+      dataType: "datetime",
     },
     {
       id: "attachments",

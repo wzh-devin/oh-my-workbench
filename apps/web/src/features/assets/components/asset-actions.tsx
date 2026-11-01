@@ -1,3 +1,4 @@
+import { useRef } from "react"
 import {
   CopyIcon,
   DownloadIcon,
@@ -26,6 +27,7 @@ export function AssetActions({
   entry,
   trash,
   onAction,
+  onRename,
   onDownload,
   onStar,
   onTrash,
@@ -37,6 +39,7 @@ export function AssetActions({
 }: {
   entry: AssetEntry
   trash: boolean
+  onRename: (entry: AssetEntry) => void
   onAction: (action: AssetAction) => void
   onDownload: (asset: Asset) => void
   onStar: (entry: AssetEntry) => void
@@ -47,6 +50,8 @@ export function AssetActions({
   onDetails: (entry: AssetEntry) => void
   onThumbnailRetry: (entry: AssetEntry) => void
 }) {
+  const renameAfterClose = useRef(false)
+  const skipRestoreFocus = useRef(false)
   return (
     <div className="flex items-center justify-end gap-1">
       {!trash && entry.kind === "file" && (
@@ -60,7 +65,17 @@ export function AssetActions({
           <DownloadIcon aria-hidden="true" />
         </Button>
       )}
-      <DropdownMenu>
+      <DropdownMenu
+        onOpenChange={(open) => {
+          if (open) skipRestoreFocus.current = false
+        }}
+        onOpenChangeComplete={(open) => {
+          if (!open && renameAfterClose.current) {
+            renameAfterClose.current = false
+            onRename(entry)
+          }
+        }}
+      >
         <DropdownMenuTrigger
           render={
             <Button
@@ -68,12 +83,16 @@ export function AssetActions({
               size="icon-sm"
               variant="ghost"
               aria-label={`文件操作：${entry.name}`}
+              data-asset-action-id={entry.id}
             />
           }
         >
           <MoreHorizontalIcon aria-hidden="true" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent
+          align="end"
+          finalFocus={() => !skipRestoreFocus.current}
+        >
           {trash ? (
             <>
               <DropdownMenuItem onClick={() => onRestore([entry.id])}>
@@ -91,7 +110,10 @@ export function AssetActions({
           ) : (
             <>
               <DropdownMenuItem
-                onClick={() => onAction({ mode: "rename", ids: [entry.id] })}
+                onClick={() => {
+                  renameAfterClose.current = true
+                  skipRestoreFocus.current = true
+                }}
               >
                 <PencilIcon aria-hidden="true" />
                 重命名

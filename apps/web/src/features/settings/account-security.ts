@@ -1,52 +1,32 @@
 import { z } from "zod"
 
-const codeSchema = z.string().regex(/^\d{6}$/, "请输入 6 位验证码")
-const password = z.string().min(1, "请输入当前密码").max(256)
-export const securityFormSchemas = {
-  email: z.object({
-    email: z.string().trim().pipe(z.email("请输入有效的邮箱地址")),
-    password: password.optional(),
-  }),
-  "verify-email": z.object({ code: codeSchema }),
-  password: z
-    .object({
-      currentPassword: password.optional(),
-      newPassword: z.string().min(1, "请输入新密码").max(256),
-      confirmPassword: z.string(),
-    })
-    .refine(
-      (value) => value.newPassword === value.confirmPassword,
-      "两次密码不一致"
-    )
-    .transform(({ currentPassword, newPassword }) => ({
-      currentPassword,
-      newPassword,
-    })),
-  "disable-mfa": z.object({ password: password.optional(), code: codeSchema }),
-}
-export type SecurityAction = keyof typeof securityFormSchemas
-const accountSecuritySchema = z
+const password = z
+  .string()
+  .min(6, "密码至少需要 6 个字符")
+  .max(24, "密码不能超过 24 个字符")
+export const changePasswordSchema = z
   .object({
-    email: z.email().nullable(),
-    emailVerified: z.boolean(),
-    passwordSet: z.boolean(),
-    mfaEnabled: z.boolean(),
+    currentPassword: password,
+    newPassword: password,
+    confirmPassword: z.string(),
   })
-  .refine((account) => !account.emailVerified || !!account.email)
-export type AccountSecurity = z.infer<typeof accountSecuritySchema>
-const mfaSetupSchema = z.object({
-  secret: z.string().min(1).max(128),
-  qrCode: z
-    .string()
-    .max(200000)
-    .regex(/^data:image\/png;base64,[A-Za-z0-9+/]+=*$/),
-})
-export type MfaSetup = z.infer<typeof mfaSetupSchema>
-const recoveryCodesSchema = z.object({
-  recoveryCodes: z.array(z.string().min(1).max(100)).min(1).max(20),
-})
+  .refine((value) => value.newPassword === value.confirmPassword, {
+    message: "两次密码不一致",
+    path: ["confirmPassword"],
+  })
+  .refine((value) => value.currentPassword !== value.newPassword, {
+    message: "新密码不能与当前密码相同",
+    path: ["newPassword"],
+  })
+  .transform(({ currentPassword, newPassword }) => ({
+    currentPassword,
+    newPassword,
+  }))
 
-/** 认证状态只认服务端响应，密码、验证码及 MFA 密钥不进入工作台存储。 */
+const accountSecuritySchema = z.object({ passwordSet: z.boolean() })
+export type AccountSecurity = z.infer<typeof accountSecuritySchema>
+
+/** 与认证接口使用同一响应信封；密码只随当前请求发送。 */
 async function request<T>(
   path: string,
   schema: z.ZodType<T>,
@@ -71,45 +51,37 @@ async function request<T>(
     if (signal?.aborted) throw error
     throw new Error("连接账号安全服务失败，请重试", { cause: error })
   }
-  if (response.status === 404 || response.status === 501)
-    throw new Error("账号安全服务暂不可用，请稍后重试")
-  if (response.status === 401) throw new Error("请先登录后再试")
-  const payload: unknown =
-    response.status === 204
-      ? undefined
-      : await response.json().catch(() => null)
+  const payload: unknown = await response.json().catch(() => null)
   if (!response.ok) {
     const failure = z
-      .object({ error: z.string().min(1).max(200) })
+      .object({ message: z.string().min(1).max(200) })
       .safeParse(payload)
-    throw new Error(failure.success ? failure.data.error : "操作失败，请重试")
+    throw new Error(
+      response.status === 401
+        ? "请先登录后再试"
+        : failure.success
+          ? failure.data.message
+          : "账号安全服务暂不可用，请重试"
+    )
   }
-  const parsed = schema.safeParse(payload)
+  const parsed = z
+    .object({ code: z.literal(0), data: schema })
+    .safeParse(payload)
   if (!parsed.success) throw new Error("安全信息格式不正确，请重试")
-  return parsed.data
+  return parsed.data.data
 }
 
-const ACTION_PATHS: Record<SecurityAction, string> = {
-  email: "/email",
-  "verify-email": "/email/verify",
-  password: "/password",
-  "disable-mfa": "/mfa/disable",
-}
 export const accountSecurityApi = {
   get: (signal?: AbortSignal) =>
     request("", accountSecuritySchema, undefined, signal),
-  sendEmailCode: () => request("/email/code", z.void(), {}),
-  submit: async (action: SecurityAction, values: Record<string, string>) => {
-    const parsed = securityFormSchemas[action].safeParse(values)
+  changePassword: async (values: Record<string, string>) => {
+    const parsed = changePasswordSchema.safeParse(values)
     if (!parsed.success)
       throw new Error(parsed.error.issues[0]?.message ?? "请检查输入内容")
-    await request(ACTION_PATHS[action], z.void(), parsed.data)
-  },
-  setupMfa: (signal?: AbortSignal) =>
-    request("/mfa/setup", mfaSetupSchema, {}, signal),
-  enableMfa: async (code: string) => {
-    const parsed = codeSchema.safeParse(code)
-    if (!parsed.success) throw new Error("请输入 6 位验证码")
-    return request("/mfa/enable", recoveryCodesSchema, { code: parsed.data })
+    await request(
+      "/password",
+      z.object({ token: z.string().min(1) }),
+      parsed.data
+    )
   },
 }

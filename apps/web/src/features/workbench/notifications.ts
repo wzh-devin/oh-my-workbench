@@ -81,8 +81,10 @@ export function getNotifications(
     }
   }
   const readIds = new Set(data.notificationReadIds)
-  return records.map((record) => ({
-    ...record,
-    unread: record.unread ?? !readIds.has(record.id),
-  }))
+  return records
+    .map((record) => ({
+      ...record,
+      unread: record.unread ?? !readIds.has(record.id),
+    }))
+    .filter((record) => record.unread)
 }

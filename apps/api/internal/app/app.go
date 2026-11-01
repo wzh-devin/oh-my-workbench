@@ -10,10 +10,15 @@ import (
 	"time"
 
 	"github.com/devin/oh-my-workbench/api/internal/config"
-	"github.com/devin/oh-my-workbench/api/internal/modules/assets"
-	"github.com/devin/oh-my-workbench/api/internal/modules/mail"
+	assetrepo "github.com/devin/oh-my-workbench/api/internal/modules/assets/repository"
+	assetservice "github.com/devin/oh-my-workbench/api/internal/modules/assets/service"
+	mailrepo "github.com/devin/oh-my-workbench/api/internal/modules/mail/repository"
+	mailservice "github.com/devin/oh-my-workbench/api/internal/modules/mail/service"
+	settingsrepo "github.com/devin/oh-my-workbench/api/internal/modules/settings/repository"
+	settingsservice "github.com/devin/oh-my-workbench/api/internal/modules/settings/service"
 	"github.com/devin/oh-my-workbench/api/internal/platform/cache"
 	"github.com/devin/oh-my-workbench/api/internal/platform/database"
+	"github.com/devin/oh-my-workbench/api/internal/platform/outbound"
 	"github.com/devin/oh-my-workbench/api/migrations"
 )
 
@@ -32,8 +37,14 @@ func Run() error {
 		return err
 	}
 	defer rdb.Close()
-	mailbox, err := mail.NewService(mail.NewRepository(db, rdb), mail.Options{
-		ProxyURL:      conf.MailProxyURL,
+	proxySettings, err := settingsservice.NewProxyService(settingsrepo.NewProxyRepository(db), ".local/asset-credentials.key")
+	if err != nil {
+		return err
+	}
+	routes := outbound.NewRoutes(proxySettings.ProxyURL, nil)
+	defer routes.Close()
+	mailbox, err := mailservice.NewService(mailrepo.NewRepository(db, rdb), mailservice.Options{
+		Routes:        routes,
 		EncryptionKey: conf.MailEncryptionKey, VAPIDPublicKey: conf.WebPushPublicKey,
 		VAPIDPrivateKey: conf.WebPushPrivateKey, VAPIDSubject: conf.WebPushSubject,
 	})
@@ -41,7 +52,9 @@ func Run() error {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	assetService, err := assets.NewService(assets.NewRepository(db), assets.Options{KeyFile: ".local/asset-credentials.key"})
+	assetService, err := assetservice.NewService(assetrepo.NewRepository(db), assetservice.Options{
+		KeyFile: ".local/asset-credentials.key", ConverterURL: conf.AssetConverterURL, Routes: routes,
+	})
 	if err != nil {
 		stop()
 		return err
@@ -51,7 +64,7 @@ func Run() error {
 	go func() { defer close(workersDone); mailbox.Run(ctx) }()
 	assetsDone := make(chan struct{})
 	go func() { defer close(assetsDone); assetService.Run(ctx) }()
-	server := &http.Server{Addr: conf.HTTPAddr, Handler: newRouter(db, rdb, mailbox, assetService), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second}
+	server := &http.Server{Addr: conf.HTTPAddr, Handler: newRouter(db, rdb, mailbox, proxySettings, assetService), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second}
 	// Stop network workers before closing their database and Redis pools.
 	shutdownDone := make(chan struct{})
 	go func() {

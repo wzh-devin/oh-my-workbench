@@ -1,5 +1,5 @@
-import { useEffect, useId, useState } from "react"
-import { DownloadIcon, FolderInputIcon } from "lucide-react"
+import { useEffect, useId, useRef, useState } from "react"
+import { DownloadIcon, FolderIcon, FolderInputIcon } from "lucide-react"
 import { toast } from "sonner"
 import {
   AlertDialog,
@@ -12,6 +12,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { assetApi } from "../api"
+import { FileTypeIcon } from "@/components/shared/file-type-icon"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import {
@@ -27,9 +28,11 @@ import {
   Sheet,
   SheetContent,
   SheetHeader,
+  SheetFooter,
   SheetTitle,
 } from "@/components/ui/sheet"
 import { Choice } from "@/features/workbench/components"
+import { FolderPicker } from "./folder-picker"
 import {
   formatSize,
   formatTime,
@@ -49,15 +52,14 @@ import {
   createFolder,
   moveEntries,
   permanentlyDeleteEntries,
-  renameEntry,
 } from "../store"
 
 export type AssetAction = {
-  mode: "new" | "rename" | "move" | "copy"
+  mode: "new" | "move" | "copy"
   ids: string[]
 }
 
-/** 重命名和目录整理共享原生项目弹窗，失败时保留输入与选择。 */
+/** 新建与目录整理共享原生项目弹窗，失败时保留输入与选择。 */
 export function AssetActionDialog({
   action,
   data,
@@ -75,9 +77,7 @@ export function AssetActionDialog({
   const entries = assetEntries(data).filter((entry) =>
     action.ids.includes(entry.id)
   )
-  const [name, setName] = useState(
-    action.mode === "rename" ? (entries[0]?.name ?? "") : ""
-  )
+  const [name, setName] = useState("")
   const [targetConnectionId, setTargetConnectionId] = useState(
     entries[0]?.connectionId ??
       data.connections.find((source) => source.id === connectionId)?.id ??
@@ -88,7 +88,6 @@ export function AssetActionDialog({
   const [busy, setBusy] = useState(false)
   const title = {
     new: "新建文件夹",
-    rename: "重命名",
     move: "移动到",
     copy: "复制到",
   }[action.mode]
@@ -111,14 +110,12 @@ export function AssetActionDialog({
       const destination = targetParentId === "root" ? null : targetParentId
       if (action.mode === "new")
         await createFolder(targetConnectionId, destination, name)
-      else if (action.mode === "rename") await renameEntry(action.ids[0], name)
       else if (action.mode === "move")
         await moveEntries(action.ids, targetConnectionId, destination)
       else await copyEntries(action.ids, targetConnectionId, destination)
       toast.success(
         {
           new: "文件夹已创建",
-          rename: "名称已更新",
           move: "已移动",
           copy: "已复制",
         }[action.mode]
@@ -149,7 +146,7 @@ export function AssetActionDialog({
           }}
           className="flex flex-col gap-4"
         >
-          {(action.mode === "new" || action.mode === "rename") && (
+          {action.mode === "new" && (
             <Field>
               <FieldLabel htmlFor={inputId}>名称</FieldLabel>
               <Input
@@ -163,44 +160,32 @@ export function AssetActionDialog({
               />
             </Field>
           )}
-          {action.mode !== "rename" && (
-            <>
-              <Field>
-                <FieldLabel>目标存储</FieldLabel>
-                <Choice
-                  value={targetConnectionId}
-                  onChange={(id) => {
-                    setTargetConnectionId(id)
-                    setTargetParentId("root")
-                  }}
-                  label="目标存储"
-                  disabled={busy || action.mode !== "new"}
-                  options={data.connections.map((source) => ({
-                    value: source.id,
-                    label: source.name,
-                  }))}
-                />
-              </Field>
-              <Field>
-                <FieldLabel>目标目录</FieldLabel>
-                <Choice
-                  value={targetParentId}
-                  onChange={setTargetParentId}
-                  label="目标目录"
-                  disabled={busy}
-                  options={[
-                    { value: "root", label: "根目录" },
-                    ...folders.map((folder) => ({
-                      value: folder.id,
-                      label: folderTrail(data, folder.id)
-                        .map((record) => record.name)
-                        .join(" / "),
-                    })),
-                  ]}
-                />
-              </Field>
-            </>
-          )}
+          <Field>
+            <FieldLabel>目标存储</FieldLabel>
+            <Choice
+              value={targetConnectionId}
+              onChange={(id) => {
+                setTargetConnectionId(id)
+                setTargetParentId("root")
+              }}
+              label="目标存储"
+              disabled={busy || action.mode !== "new"}
+              options={data.connections.map((source) => ({
+                value: source.id,
+                label: source.name,
+              }))}
+            />
+          </Field>
+          <Field>
+            <FieldLabel>目标目录</FieldLabel>
+            <FolderPicker
+              value={targetParentId}
+              onChange={setTargetParentId}
+              disabled={busy}
+              folders={folders}
+            />
+          </Field>
+
           {action.mode !== "new" && (
             <p className="text-xs text-muted-foreground">{entries.length} 项</p>
           )}
@@ -301,6 +286,13 @@ export function AssetDetails({
   onLocate: (entry: AssetEntry) => void
   onDownload: (asset: Asset) => void
 }) {
+  // 先挂载关闭态，关闭后等待 Sheet 过渡完成再通知父级卸载。
+  const [open, setOpen] = useState(false)
+  const locateAfterClose = useRef(false)
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setOpen(true))
+    return () => cancelAnimationFrame(frame)
+  }, [])
   const [attempt, setAttempt] = useState(0)
   const requestKey = `${initialEntry.id}:${initialEntry.version}:${attempt}`
   const [loaded, setLoaded] = useState<{
@@ -328,87 +320,173 @@ export function AssetDetails({
       })
     return () => controller.abort()
   }, [initialEntry.id, requestKey])
-  const facts = [
-    ["名称", entry.name],
-    ["类型", entry.kind === "folder" ? "文件夹" : entry.type],
-    [
-      "大小",
-      formatSize(entry.kind === "file" ? entry.size : (entry.size ?? 0)),
-    ],
-    [
-      "所属存储",
-      data.connections.find((source) => source.id === entry.connectionId)
-        ?.name ?? "—",
-    ],
-    [
-      "Bucket",
-      data.connections.find((source) => source.id === entry.connectionId)
-        ?.bucket ?? "—",
-    ],
+  const source = data.connections.find(
+    (connection) => connection.id === entry.connectionId
+  )
+  const extension = entry.name.match(/\.([^.]+)$/)?.[1].toUpperCase()
+  const typeLabel =
+    entry.kind === "folder"
+      ? "文件夹"
+      : extension
+        ? `${extension} 文件`
+        : "文件"
+  const positionFacts = [
+    ["所属存储", source?.name ?? "—"],
     [
       "路径",
       `/${[...folderTrail(data, entry.parentId).map((folder) => folder.name), entry.name].join("/")}`,
     ],
+  ]
+  const timeFacts = [
     ["创建时间", formatTime(entry.createdAt)],
     ["修改时间", formatTime(entry.updatedAt ?? entry.createdAt)],
-    ["最近访问", entry.lastOpenedAt ? formatTime(entry.lastOpenedAt) : "—"],
-    ...(entry.kind === "folder"
-      ? [["文件数量", String(entry.fileCount ?? 0)]]
-      : []),
+    ["最近访问", formatTime(entry.lastOpenedAt)],
     ...(entry.trashedAt ? [["删除时间", formatTime(entry.trashedAt)]] : []),
   ]
   return (
     <Sheet
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose()
+      open={open}
+      onOpenChange={setOpen}
+      onOpenChangeComplete={(next) => {
+        if (!next) {
+          if (locateAfterClose.current) onLocate(entry)
+          onClose()
+          // 父级清理详情会重新渲染行，等提交后再恢复到当前操作按钮。
+          requestAnimationFrame(() => {
+            const target =
+              Array.from(
+                document.querySelectorAll<HTMLButtonElement>(
+                  "[data-asset-action-id]"
+                )
+              ).find((button) => button.dataset.assetActionId === entry.id) ??
+              document.querySelector<HTMLInputElement>(
+                'input[aria-label="搜索文件"]'
+              )
+            target?.focus()
+          })
+        }
       }}
     >
-      <SheetContent aria-describedby={undefined}>
-        <SheetHeader>
-          <SheetTitle>文件详情</SheetTitle>
+      <SheetContent
+        aria-describedby={undefined}
+        finalFocus={false}
+        className="data-[side=right]:w-full motion-reduce:translate-x-0! data-[side=right]:sm:max-w-md"
+      >
+        <SheetHeader className="shrink-0">
+          <SheetTitle>
+            {entry.kind === "folder" ? "文件夹详情" : "文件详情"}
+          </SheetTitle>
         </SheetHeader>
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-4 pb-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-auto px-4 pb-4">
           {loading ? (
-            <Skeleton className="h-64 w-full" />
+            <div
+              className="flex flex-col gap-6"
+              role="status"
+              aria-label="正在加载文件详情"
+            >
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-32 w-full" />
+            </div>
           ) : (
-            <dl className="flex flex-col gap-4">
-              {facts.map(([label, value]) => (
-                <div key={label} className="flex flex-col gap-1">
-                  <dt className="text-xs text-muted-foreground">{label}</dt>
-                  <dd className="text-sm break-all">{value}</dd>
+            <>
+              <div className="flex min-w-0 items-start gap-3">
+                {entry.kind === "file" ? (
+                  <FileTypeIcon file={entry} size="default" />
+                ) : (
+                  <FolderIcon
+                    aria-hidden="true"
+                    className="size-10 shrink-0 text-muted-foreground"
+                  />
+                )}
+                <div className="flex min-w-0 flex-col gap-1">
+                  <p className="text-sm font-medium break-words">
+                    {entry.name}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {typeLabel} · {formatSize(entry.size ?? 0)}
+                    {entry.kind === "folder" &&
+                      ` · ${entry.fileCount ?? 0} 个文件`}
+                  </p>
                 </div>
+              </div>
+              {[positionFacts, timeFacts].map((facts, index) => (
+                <dl
+                  key={facts[0][0]}
+                  className={index ? "grid gap-3 border-t pt-4" : "grid gap-3"}
+                >
+                  {facts.map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="grid grid-cols-[5rem_minmax(0,1fr)] items-start gap-4"
+                    >
+                      <dt className="text-sm text-muted-foreground">{label}</dt>
+                      <dd className="min-w-0 text-sm break-words tabular-nums">
+                        {value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
               ))}
-            </dl>
+              <details className="border-t pt-4">
+                <summary className="cursor-pointer text-sm text-muted-foreground">
+                  技术信息
+                </summary>
+                <dl className="grid gap-3 pt-4">
+                  {[
+                    ["Bucket", source?.bucket ?? "—"],
+                    ...(entry.kind === "file"
+                      ? [["媒体类型", entry.type || "—"]]
+                      : []),
+                  ].map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="grid grid-cols-[5rem_minmax(0,1fr)] items-start gap-4"
+                    >
+                      <dt className="text-sm text-muted-foreground">{label}</dt>
+                      <dd className="min-w-0 text-sm break-all">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </details>
+            </>
           )}
           {failed && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setAttempt((value) => value + 1)}
-            >
-              重试详情
-            </Button>
+            <div role="alert" className="flex items-center gap-2">
+              <span className="text-sm text-destructive">详情读取失败</span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setAttempt((value) => value + 1)}
+              >
+                重试详情
+              </Button>
+            </div>
           )}
-          <div className="flex flex-wrap gap-2 border-t pt-4">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => onLocate(entry)}
-            >
-              <FolderInputIcon aria-hidden="true" />
-              打开所在位置
-            </Button>
+        </div>
+        <SheetFooter className="shrink-0 border-t">
+          <div className="flex flex-wrap items-center gap-2">
             {entry.kind === "file" && (
               <Button type="button" size="sm" onClick={() => onDownload(entry)}>
                 <DownloadIcon aria-hidden="true" />
                 下载
               </Button>
             )}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                locateAfterClose.current = true
+                setOpen(false)
+              }}
+            >
+              <FolderInputIcon aria-hidden="true" />
+              打开所在位置
+            </Button>
           </div>
-        </div>
+        </SheetFooter>
       </SheetContent>
     </Sheet>
   )

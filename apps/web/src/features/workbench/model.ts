@@ -468,17 +468,7 @@ export const SEED_WORKBENCH = workbenchSchema.parse({
   ],
 })
 
-/** 统一各页面的时间格式，保留来源数据中的真实日期。 */
-export const formatTime = (value: string | null) =>
-  value
-    ? new Intl.DateTimeFormat("zh-CN", {
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }).format(new Date(value))
-    : "尚未同步"
+export { formatDateTime as formatTime } from "@/lib/format-date-time"
 
 /** 文件与汇总容量共用 1024 进制，达到阈值后自动切换单位。 */
 export const formatSize = (bytes: number) => {

@@ -2,12 +2,10 @@ import { useId, useState, type FormEvent } from "react"
 import { SaveIcon } from "lucide-react"
 import { toast } from "sonner"
 
-import { HeaderActions } from "@/components/app-shell/header-actions"
-import { ThemeToggle } from "@/components/theme/theme-toggle"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
-import { Choice, WorkbenchScreen } from "@/features/workbench/components"
+import { WorkbenchScreen } from "@/features/workbench/components"
 import { personalProfileSchema } from "@/features/workbench/model"
 import { updateWorkbench, useWorkbench } from "@/features/workbench/store"
 import type { SettingsItem } from "./data"
@@ -17,43 +15,16 @@ import { SettingRow } from "./sections/setting-row"
 import { SettingsSection } from "./sections/settings-section"
 import { MailPushSettings } from "@/features/mail/components/push-settings"
 import { setMailNotifications, useMail } from "@/features/mail/store"
+import { ProxySettings } from "./proxy-settings"
+import { GeneralSettings } from "./general-settings"
 
-function GeneralSettings() {
-  const { data } = useWorkbench()
-  return (
-    <SettingsSection title="通用设置">
-      <SettingGroup legend="通用设置">
-        <SettingRow title="主题">
-          <ThemeToggle />
-        </SettingRow>
-        <SettingRow title="资产默认视图" last>
-          <Choice
-            label="资产默认视图"
-            value={data.preferences.assetLayout}
-            options={[
-              { value: "list", label: "列表" },
-              { value: "grid", label: "网格" },
-            ]}
-            onChange={(value) => {
-              if (value !== "list" && value !== "grid") return
-              updateWorkbench((current) => ({
-                ...current,
-                preferences: { ...current.preferences, assetLayout: value },
-              }))
-            }}
-          />
-        </SettingRow>
-      </SettingGroup>
-    </SettingsSection>
-  )
-}
-
+/** 编辑个人资料；失败保留草稿，成功后同步用户菜单。 */
 function ProfileSettings() {
   const { data } = useWorkbench()
   const [name, setName] = useState(data.profile.name)
   const [email, setEmail] = useState(data.profile.email)
-  const [error, setError] = useState("")
   const id = useId()
+  /** 校验和持久化均成功后才更新已保存的表单值。 */
   function save(event: FormEvent) {
     event.preventDefault()
     const result = personalProfileSchema.safeParse({
@@ -61,57 +32,49 @@ function ProfileSettings() {
       email: email.trim(),
     })
     if (!result.success) {
-      setError(result.error.issues[0]?.message ?? "请检查个人资料")
+      toast.error(result.error.issues[0]?.message ?? "请检查个人资料")
       return
     }
     if (updateWorkbench((current) => ({ ...current, profile: result.data }))) {
       setName(result.data.name)
       setEmail(result.data.email)
-      setError("")
       toast.success("个人资料已保存")
-    } else setError("保存失败，请重试")
+    }
   }
   return (
-    <>
-      <HeaderActions>
-        <Button type="submit" form={id} size="sm">
+    <form id={id} onSubmit={save} className="flex flex-col gap-4">
+      <SettingsSection title="个人资料">
+        <SettingGroup legend="个人资料">
+          <SettingRow title="显示名称" labelFor={`${id}-name`}>
+            <Input
+              id={`${id}-name`}
+              placeholder="请输入显示名称"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              required
+              maxLength={100}
+              autoComplete="nickname"
+            />
+          </SettingRow>
+          <SettingRow title="联系邮箱（选填）" labelFor={`${id}-email`} last>
+            <Input
+              id={`${id}-email`}
+              placeholder="name@example.com"
+              value={email}
+              type="email"
+              onChange={(event) => setEmail(event.target.value)}
+              autoComplete="email"
+            />
+          </SettingRow>
+        </SettingGroup>
+      </SettingsSection>
+      <div className="flex justify-end">
+        <Button type="submit" size="sm">
           <SaveIcon aria-hidden="true" />
           保存资料
         </Button>
-      </HeaderActions>
-      <form id={id} onSubmit={save} className="flex flex-col gap-4">
-        <SettingsSection title="个人资料">
-          <SettingGroup legend="个人资料">
-            <SettingRow title="显示名称" labelFor={`${id}-name`}>
-              <Input
-                id={`${id}-name`}
-                placeholder="请输入显示名称"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                required
-                maxLength={100}
-                autoComplete="nickname"
-              />
-            </SettingRow>
-            <SettingRow title="联系邮箱（选填）" labelFor={`${id}-email`} last>
-              <Input
-                id={`${id}-email`}
-                placeholder="name@example.com"
-                value={email}
-                type="email"
-                onChange={(event) => setEmail(event.target.value)}
-                autoComplete="email"
-              />
-            </SettingRow>
-          </SettingGroup>
-        </SettingsSection>
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
-      </form>
-    </>
+      </div>
+    </form>
   )
 }
 
@@ -163,12 +126,18 @@ function NotificationSettings() {
 }
 
 export function SettingsPanel({ item }: { item: SettingsItem }) {
-  if (item.value === "security") return <AccountSecuritySettings />
-  return (
-    <WorkbenchScreen title={item.label}>
+  const content = (
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 py-4">
       {item.value === "general" && <GeneralSettings />}
       {item.value === "profile" && <ProfileSettings />}
       {item.value === "notifications" && <NotificationSettings />}
-    </WorkbenchScreen>
+      {item.value === "proxy" && <ProxySettings />}
+      {item.value === "security" && <AccountSecuritySettings />}
+    </div>
+  )
+  return item.value === "security" ? (
+    content
+  ) : (
+    <WorkbenchScreen title={item.label}>{content}</WorkbenchScreen>
   )
 }

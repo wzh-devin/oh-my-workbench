@@ -18,15 +18,16 @@ type Config struct {
 	RedisPassword     string
 	JWTSecret         string
 	MailEncryptionKey string
-	MailProxyURL      string
 	WebPushPublicKey  string
 	WebPushPrivateKey string
 	WebPushSubject    string
+	AssetConverterURL string
 }
 
 var load = sync.OnceValue(func() Config {
-	if err := godotenv.Load(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
-		panic("读取 .env 配置失败")
+	// API commands run from apps/api; the workspace owns the only local env file.
+	if err := godotenv.Load("../../.env.local"); err != nil && !errors.Is(err, os.ErrNotExist) {
+		panic("读取项目根目录 .env.local 配置失败")
 	}
 	workerID, err := strconv.ParseInt(os.Getenv("WORKER_ID"), 10, 64)
 	if err != nil || workerID < 0 || workerID > 1023 {
@@ -41,10 +42,10 @@ var load = sync.OnceValue(func() Config {
 		RedisPassword:     os.Getenv("REDIS_PASSWORD"),
 		JWTSecret:         os.Getenv("JWT_SECRET"),
 		MailEncryptionKey: os.Getenv("MAIL_ENCRYPTION_KEY"),
-		MailProxyURL:      os.Getenv("MAIL_PROXY_URL"),
 		WebPushPublicKey:  os.Getenv("WEB_PUSH_VAPID_PUBLIC_KEY"),
 		WebPushPrivateKey: os.Getenv("WEB_PUSH_VAPID_PRIVATE_KEY"),
 		WebPushSubject:    os.Getenv("WEB_PUSH_SUBJECT"),
+		AssetConverterURL: os.Getenv("ASSET_CONVERTER_URL"),
 	}
 	if conf.HTTPAddr == "" {
 		conf.HTTPAddr = "localhost:11990"

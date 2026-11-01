@@ -32,6 +32,11 @@ import { DataGridPagination } from "@/features/dashboard/components/data-grid-pa
 
 import { useGridPageSize, resizeGridPage } from "./use-grid-page-size"
 import { VirtualRecordsTable } from "./virtual-records-table"
+import { formatDateTime } from "@/lib/format-date-time"
+
+export type RecordColumn<T extends object> = ColumnDef<DataGridFeatures, T> & {
+  dataType?: "datetime"
+}
 
 export function RecordHint({
   label,
@@ -86,7 +91,7 @@ export function RecordsGrid<T extends object>({
   continuous,
 }: {
   records: T[]
-  columns: ColumnDef<DataGridFeatures, T>[]
+  columns: RecordColumn<T>[]
   toolbar: ReactNode
   empty: ReactNode
   title?: string
@@ -157,7 +162,19 @@ export function RecordsGrid<T extends object>({
     features: dataGridFeatures,
     data: records,
     defaultColumn: { enableResizing: false, enableSorting: false },
-    columns: columns.map<ColumnDef<DataGridFeatures, T>>((definition) => {
+    columns: columns.map<ColumnDef<DataGridFeatures, T>>((source) => {
+      const definition: RecordColumn<T> =
+        source.dataType === "datetime"
+          ? {
+              ...source,
+              size: source.size ?? 192,
+              cell: ({ getValue }) => (
+                <span className="text-sm whitespace-nowrap text-muted-foreground tabular-nums">
+                  {formatDateTime(getValue())}
+                </span>
+              ),
+            }
+          : source
       const centered = definition.meta?.align === "center"
       const meta = {
         ...definition.meta,
@@ -202,7 +219,7 @@ export function RecordsGrid<T extends object>({
             column={column}
             title={title}
             className={cn(
-              "w-full text-sm font-medium text-foreground",
+              "w-full text-sm font-medium text-foreground hover:bg-transparent data-[state=open]:bg-transparent dark:hover:bg-transparent",
               centered
                 ? "justify-center text-center"
                 : "justify-start text-left"

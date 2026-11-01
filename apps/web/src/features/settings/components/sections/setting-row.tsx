@@ -22,17 +22,17 @@ export function SettingRow({
     <>
       <Field
         orientation="responsive"
-        className="gap-4 px-4 py-2.5 @md/field-group:gap-12 @md/field-group:has-[>[data-slot=field-content]]:items-center"
+        className="gap-3 py-4 first:pt-0 last:pb-0 @md/field-group:grid @md/field-group:grid-cols-[12rem_minmax(0,1fr)] @md/field-group:gap-6 @md/field-group:has-[>[data-slot=field-content]]:items-center"
       >
-        <div className="flex w-full min-w-0 flex-col gap-0.5 @md/field-group:w-1/2 @md/field-group:basis-1/2 @md/field-group:pr-6">
+        <div className="min-w-0">
           {labelFor ? (
             <FieldLabel htmlFor={labelFor}>{title}</FieldLabel>
           ) : (
             <FieldTitle>{title}</FieldTitle>
           )}
         </div>
-        <FieldContent className="w-full min-w-0 @md/field-group:w-1/2 @md/field-group:basis-1/2 @md/field-group:pl-2">
-          <div className="flex w-full justify-start">{children}</div>
+        <FieldContent className="min-w-0">
+          <div className="flex w-full min-w-0 items-center">{children}</div>
         </FieldContent>
       </Field>
       {!last && <FieldSeparator />}

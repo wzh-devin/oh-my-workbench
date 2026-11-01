@@ -132,7 +132,7 @@ export function AssetViewDialog({
       }
       rules={
         <RuleFilters
-          fields={assetRuleFields(overview.connections)}
+          fields={assetRuleFields(overview.connections, overview.folders)}
           query={query}
           onQueryChange={setQuery}
           mode="inline"

@@ -18,7 +18,10 @@ export const assetEntries = (data: Workbench): AssetEntry[] => [
 ]
 
 /** 目录链按根到叶返回，损坏或循环数据不继续遍历。 */
-export const folderTrail = (data: Workbench, parentId: string | null) => {
+export const folderTrail = (
+  data: Pick<Workbench, "assetFolders">,
+  parentId: string | null
+) => {
   const folderMap = new Map(
     data.assetFolders.map((folder) => [folder.id, folder])
   )

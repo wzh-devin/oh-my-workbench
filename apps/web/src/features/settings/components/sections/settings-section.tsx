@@ -1,5 +1,4 @@
 import type { ReactNode } from "react"
-import { Card, CardContent } from "@/components/ui/card"
 
 export function SettingsSection({
   title,
@@ -10,9 +9,7 @@ export function SettingsSection({
 }) {
   return (
     <section aria-label={title} className="flex flex-col">
-      <Card size="sm">
-        <CardContent>{children}</CardContent>
-      </Card>
+      {children}
     </section>
   )
 }
