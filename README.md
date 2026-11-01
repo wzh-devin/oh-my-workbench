@@ -305,16 +305,20 @@ COOKIE_SECURE=true
 
 将文件权限设为 `600`。HTTP 部署使用 `COOKIE_SECURE=false`。这些值仅保存在服务器，Action 不上传或覆盖环境文件。部署脚本优先读取 `.env`，不存在时兼容已有的 `.env.local`；两者同时存在时使用 `.env`，配置错误时不会回退到另一份文件。本地开发仍使用仓库根目录的 `.env.local`。
 
-数据库和 Redis 位于同一服务器的其他 Docker 网络时，在部署目录创建 `compose.override.yaml`，让应用加入对应网络，并在 `.env` 中使用服务名连接。例如已有网络名为 `union-talk`：
+同一服务器的 PostgreSQL、Redis、Mihomo 等共享中间件统一接入独立的 `infra` Docker 网络，由基础设施创建（`docker network create infra`），各项目在 Compose 中以 `external: true` 引用。业务应用按需加入，使用 `postgresql:5432`、`redis:6379` 等服务名连接。
+
+在工作台部署目录创建 `compose.override.yaml`，接入已有的 `infra` 网络：
 
 ```yaml
 networks:
   default:
     external: true
-    name: union-talk
+    name: infra
 ```
 
 部署脚本自动合并该文件，Action 不上传或覆盖它。手动执行 Compose 时也需添加 `-f compose.yaml -f compose.override.yaml`。容器中的 `127.0.0.1` 指向容器自身，无法访问只绑定宿主机回环地址的数据库服务。
+
+Mihomo 接入 `infra` 且允许局域网连接后，应用的代理设置可填写 `socks5h://mihomo:7890`；其他业务容器也可保留自身网络，同时加入 `infra` 使用这些中间件。
 
 #### GitHub 配置
 

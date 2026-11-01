@@ -111,6 +111,24 @@ jobs:
 
           umask 077
           printf '%s\n' "$NB_SETUP_KEY" > "$RUNNER_TEMP/netbird.key"
+
+          netbird_diagnostics() {
+            echo '::group::NetBird startup diagnostics'
+            {
+              timeout 10 docker inspect --format \
+                'status={{.State.Status}} exit_code={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} error={{.State.Error}}' netbird-ci || true
+              timeout 10 docker logs --tail 100 netbird-ci || true
+              timeout 10 docker exec netbird-ci netbird status -d || true
+            } 2>&1 | python3 -c '
+          import os, sys
+          output = sys.stdin.read()
+          key = os.environ.get("NB_SETUP_KEY", "").strip()
+          sys.stdout.write(output.replace(key, "***") if key else output)
+          ' || true
+            echo '::endgroup::'
+          }
+          trap 'result=$?; if ((result != 0)); then netbird_diagnostics; fi; exit "$result"' EXIT
+
           docker run -d \
             --name netbird-ci \
             --hostname "gha-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
@@ -126,6 +144,11 @@ jobs:
             netbirdio/netbird:0.80.0
 
           for ((attempt=0; attempt<30; attempt++)); do
+            if [[ "$(docker inspect --format '{{.State.Running}}' netbird-ci)" != true ]]; then
+              echo 'NetBird container exited before SSH became reachable' >&2
+              exit 1
+            fi
+            echo "Waiting for private SSH: attempt $((attempt + 1))/30"
             if timeout 3 bash -c 'exec 3<>"/dev/tcp/$1/$2"' _ "$DEPLOY_HOST" "$DEPLOY_PORT" 2>/dev/null; then
               echo 'Private SSH port is reachable'
               exit 0
@@ -133,7 +156,6 @@ jobs:
             sleep 2
           done
 
-          docker exec netbird-ci netbird status -d || true
           echo 'Cannot reach SSH; check NetBird registration, peer approval and the TCP port policy' >&2
           exit 1
 
