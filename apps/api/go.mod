@@ -19,6 +19,7 @@ require (
 	golang.org/x/image v0.47.0
 	golang.org/x/net v0.61.0
 	golang.org/x/text v0.43.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
 )

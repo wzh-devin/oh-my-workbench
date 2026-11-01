@@ -1,6 +1,9 @@
 package handler
 
-import "github.com/gin-gonic/gin"
+import (
+	"github.com/devin/oh-my-workbench/api/internal/platform/logging"
+	"github.com/gin-gonic/gin"
+)
 
 func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
 	r.GET("/overview", h.overview)
@@ -28,7 +31,7 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
 	r.POST("/uploads/init", h.initUpload)
 	r.GET("/uploads", h.uploads)
 	r.GET("/uploads/:id", h.upload)
-	r.PUT("/uploads/:id/parts/:number", h.putPart)
+	r.PUT("/uploads/:id/parts/:number", logging.MetadataOnly, h.putPart)
 	r.PATCH("/uploads/:id", h.controlUpload)
 	r.DELETE("/uploads/:id", h.controlUpload)
 	r.POST("/uploads/:id/complete", h.completeUpload)

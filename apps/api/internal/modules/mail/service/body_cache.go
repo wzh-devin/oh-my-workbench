@@ -2,10 +2,10 @@ package service
 
 import (
 	"context"
-	"log"
 	"time"
 
 	maildomain "github.com/devin/oh-my-workbench/api/internal/modules/mail/domain"
+	"github.com/devin/oh-my-workbench/api/internal/platform/logging"
 )
 
 // 旧正文缓存后台升级；阅读请求不等待远端邮箱，也不创建无界任务。
@@ -47,6 +47,6 @@ func (s *Service) refreshCachedBody(parent context.Context, record maildomain.Re
 		err = s.repository.CacheBody(ctx, record.UserID, record.ID, body)
 	}
 	if err != nil && ctx.Err() == nil {
-		log.Printf("邮件正文缓存升级失败: message=%d", record.ID)
+		logging.Error(ctx, "mail.body_refresh_failed", err, "message_id", record.ID)
 	}
 }

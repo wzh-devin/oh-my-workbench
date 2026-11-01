@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -71,7 +72,8 @@ func Run() error {
 	go func() { defer close(workersDone); mailbox.Run(ctx) }()
 	assetsDone := make(chan struct{})
 	go func() { defer close(assetsDone); assetService.Run(ctx) }()
-	server := &http.Server{Addr: ":11990", Handler: newRouter(db, rdb, mailbox, proxySettings, systemSettings, runtime.JWTSecret, assetService), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second}
+	server := &http.Server{Addr: ":11990", Handler: newRouter(db, rdb, mailbox, proxySettings, systemSettings, runtime.JWTSecret, assetService), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second,
+		ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)}
 	// Stop network workers before closing their database and Redis pools.
 	shutdownDone := make(chan struct{})
 	go func() {

@@ -44,6 +44,8 @@ COPY --chmod=755 deploy/docker/entrypoint.sh /usr/local/bin/flowly-entrypoint
 COPY --chmod=755 deploy/docker/healthcheck.sh /usr/local/bin/flowly-healthcheck
 ENV HOME=/tmp/flowly GIN_MODE=release
 WORKDIR /app/apps/api
+RUN install -d -o gotenberg -g gotenberg -m 0750 logs
+VOLUME ["/app/apps/api/logs"]
 USER gotenberg
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=15s --start-period=90s --retries=3 \

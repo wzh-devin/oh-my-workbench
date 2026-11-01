@@ -11,6 +11,7 @@ import (
 	authhandler "github.com/devin/oh-my-workbench/api/internal/modules/auth/handler"
 	settingsdomain "github.com/devin/oh-my-workbench/api/internal/modules/settings/domain"
 	settingsservice "github.com/devin/oh-my-workbench/api/internal/modules/settings/service"
+	"github.com/devin/oh-my-workbench/api/internal/platform/logging"
 	"github.com/devin/oh-my-workbench/api/internal/shared/response"
 )
 
@@ -36,6 +37,9 @@ func finish(c *gin.Context, out any, err error) {
 	}
 	if errors.Is(err, settingsdomain.ErrConflict) {
 		status, message = http.StatusConflict, settingsdomain.ErrConflict.Error()
+	}
+	if status >= 500 {
+		logging.Error(c.Request.Context(), "settings.failed", err)
 	}
 	response.Fail(c, status, message)
 }

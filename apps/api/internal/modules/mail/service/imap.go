@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"mime/quotedprintable"
 	"net"
@@ -25,6 +24,7 @@ import (
 	"golang.org/x/net/html"
 
 	maildomain "github.com/devin/oh-my-workbench/api/internal/modules/mail/domain"
+	"github.com/devin/oh-my-workbench/api/internal/platform/logging"
 )
 
 // 只读 IMAP 连接、邮件头与 MIME 读取；取消请求即释放连接。
@@ -52,7 +52,7 @@ func (s *Service) connectMailbox(ctx context.Context, a maildomain.Account, secr
 	conn, err := dialMailboxTLS(ctx, dialer, net.JoinHostPort(host, "993"), &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12})
 	if err != nil {
 		if ctx.Err() == nil {
-			log.Printf("邮箱 TLS 连接失败: provider=%s error=%v", a.Provider, err)
+			logging.Error(ctx, "mail.tls_failed", err, "provider", a.Provider)
 		}
 		return nil, maildomain.ErrNetwork
 	}

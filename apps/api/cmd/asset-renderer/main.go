@@ -7,7 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"mime"
 	"net/http"
 	"os"
@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/devin/oh-my-workbench/api/internal/platform/logging"
 )
 
 const maxSourceBytes = 100 << 20
@@ -24,13 +26,18 @@ const maxOutputBytes = 2 << 20
 func main() {
 	address := flag.String("listen", ":8080", "HTTP listen address")
 	flag.Parse()
+	os.Exit(logging.Run("renderer", func() error { return run(*address) }))
+}
+
+func run(address string) error {
 	for _, command := range []string{"vipsheader", "vipsthumbnail", "ffmpeg", "ffprobe"} {
 		if _, err := exec.LookPath(command); err != nil {
-			log.Fatal(err)
+			return err
 		}
 	}
-	server := &http.Server{Addr: *address, Handler: renderer(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 35 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 8 << 10}
-	log.Fatal(server.ListenAndServe())
+	server := &http.Server{Addr: address, Handler: renderer(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 35 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 8 << 10,
+		ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)}
+	return server.ListenAndServe()
 }
 
 func renderer() http.Handler {
@@ -46,6 +53,7 @@ func renderer() http.Handler {
 			return
 		}
 		if err := render(w, r); err != nil {
+			logging.Error(r.Context(), "renderer.failed", err, "path", r.URL.Path)
 			status := http.StatusUnprocessableEntity
 			var limit *http.MaxBytesError
 			if errors.As(err, &limit) {

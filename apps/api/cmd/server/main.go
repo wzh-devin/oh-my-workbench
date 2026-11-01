@@ -1,15 +1,12 @@
 package main
 
 import (
-	"log"
+	"os"
 
 	"github.com/devin/oh-my-workbench/api/internal/app"
+	"github.com/devin/oh-my-workbench/api/internal/platform/logging"
 )
 
 func main() {
-	// 启动函数
-	err := app.Run()
-	if err != nil {
-		log.Fatal(err)
-	}
+	os.Exit(logging.Run("api", app.Run))
 }

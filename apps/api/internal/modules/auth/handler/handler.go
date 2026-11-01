@@ -2,7 +2,6 @@ package handler
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"strings"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/devin/oh-my-workbench/api/internal/config"
 	authdomain "github.com/devin/oh-my-workbench/api/internal/modules/auth/domain"
 	authservice "github.com/devin/oh-my-workbench/api/internal/modules/auth/service"
+	"github.com/devin/oh-my-workbench/api/internal/platform/logging"
 	"github.com/devin/oh-my-workbench/api/internal/shared/password"
 	"github.com/devin/oh-my-workbench/api/internal/shared/response"
 )
@@ -55,7 +55,7 @@ func authError(c *gin.Context, err error) {
 	case errors.Is(err, password.ErrBusy):
 		response.Fail(c, http.StatusServiceUnavailable, "请稍后重试")
 	default:
-		log.Printf("认证服务失败: %v", err)
+		logging.Error(c.Request.Context(), "auth.failed", err)
 		response.Fail(c, http.StatusServiceUnavailable, "认证服务暂不可用，请重试")
 	}
 }

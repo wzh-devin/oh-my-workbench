@@ -9,6 +9,7 @@ import (
 	authservice "github.com/devin/oh-my-workbench/api/internal/modules/auth/service"
 	settingsdomain "github.com/devin/oh-my-workbench/api/internal/modules/settings/domain"
 	settingsservice "github.com/devin/oh-my-workbench/api/internal/modules/settings/service"
+	"github.com/devin/oh-my-workbench/api/internal/platform/logging"
 	"github.com/devin/oh-my-workbench/api/internal/shared/response"
 	"github.com/gin-gonic/gin"
 )
@@ -46,6 +47,9 @@ func systemResult(c *gin.Context, view settingsdomain.SystemView, err error) {
 	}
 	if errors.Is(err, settingsdomain.ErrConflict) {
 		status, message = http.StatusConflict, err.Error()
+	}
+	if status >= 500 {
+		logging.Error(c.Request.Context(), "settings.failed", err)
 	}
 	response.Fail(c, status, message)
 }

@@ -3,13 +3,13 @@ package service
 import (
 	"context"
 	"errors"
-	"log"
 	"sync"
 	"time"
 
 	minio "github.com/minio/minio-go/v7"
 
 	assetdomain "github.com/devin/oh-my-workbench/api/internal/modules/assets/domain"
+	"github.com/devin/oh-my-workbench/api/internal/platform/logging"
 )
 
 // 上传恢复、对象清理和预览各自运行，慢转换不会阻塞上传与清理。
@@ -34,7 +34,7 @@ func (s *Service) Run(ctx context.Context) {
 
 func workerError(kind string, err error) {
 	if err != nil && !errors.Is(err, assetdomain.ErrConflict) && !errors.Is(err, context.Canceled) {
-		log.Printf("资产%s任务失败: %v", kind, err)
+		logging.Error(context.Background(), "assets.worker_failed", err, "task", kind)
 	}
 }
 

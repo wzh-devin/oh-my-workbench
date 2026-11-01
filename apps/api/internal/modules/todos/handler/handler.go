@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -12,6 +11,7 @@ import (
 	authhandler "github.com/devin/oh-my-workbench/api/internal/modules/auth/handler"
 	tododomain "github.com/devin/oh-my-workbench/api/internal/modules/todos/domain"
 	todoservice "github.com/devin/oh-my-workbench/api/internal/modules/todos/service"
+	"github.com/devin/oh-my-workbench/api/internal/platform/logging"
 	"github.com/devin/oh-my-workbench/api/internal/shared/response"
 )
 
@@ -28,7 +28,7 @@ func fail(c *gin.Context, err error) {
 	case errors.Is(err, tododomain.ErrConflict), errors.Is(err, tododomain.ErrListName), errors.Is(err, tododomain.ErrViewName), errors.Is(err, tododomain.ErrLastView), errors.Is(err, tododomain.ErrViewLimit):
 		response.Fail(c, 409, err.Error())
 	default:
-		log.Printf("待办服务失败: %v", err)
+		logging.Error(c.Request.Context(), "todos.failed", err)
 		response.Fail(c, 503, "待办服务暂不可用，请重试")
 	}
 }

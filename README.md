@@ -244,6 +244,41 @@ docker run -d --name oh-my-workbench -p 8080:8080 \
 
 Redis 有密码时另传 `REDIS_PASSWORD`。单实例默认 `WORKER_ID=1`，多实例需分别指定不同编号并连接同一业务数据库。
 
+### 文件日志
+
+后端使用 Go 标准库 [log/slog](https://pkg.go.dev/log/slog)，通过 [lumberjack](https://github.com/natefinch/lumberjack) 轮转文件。完整日志以一行一条 JSON 写入文件，WARN/ERROR 同时输出到标准输出；网关不再重复输出 API 原始访问日志。本地位于 `apps/api/logs/`，镜像内位于 `/app/apps/api/logs/`。
+
+| 文件 | 内容 |
+|---|---|
+| `api.log` | 请求、响应、SQL、业务错误、启动与关闭 |
+| `renderer.log` | 缩略图服务启动和错误 |
+| `api-crash.log` / `renderer-crash.log` | Go 运行时未处理崩溃的原始堆栈 |
+
+请求记录方法、路径、查询参数、客户端 IP、请求时间；响应记录状态码、结束时间、耗时、请求/响应体与字节数。响应头 `X-Request-ID` 对应日志中的 `request_id`，同一请求的 SQL 和错误也使用该编号。SQL 保留语句模板、参数、执行耗时及行数；慢于 200ms 标记为 WARN。内部错误记录原因、类型和当前调用栈，接口仍返回原有业务响应。
+
+密码、令牌、Cookie、私钥、存储凭据和 URL 中的认证信息会脱敏；账户、系统密钥、存储连接及推送凭据相关 SQL 的参数整体隐藏。请求/响应体最多捕获 8KiB，超过上限或无效 JSON 只记省略原因；上传分片、文件下载及 SSE 不记录内容。请求采集不提前读取请求体，流式输出仍即时发送。崩溃日志保留运行时原始输出，文件权限为 `0600`。
+
+单个结构化文件达到 50MiB 后轮转，最多保留 5 份历史文件，历史保留 7 天；崩溃文件在下次进程启动时检查大小并轮转。Compose 同时将 Docker 标准输出日志限制为每份 10MiB、最多 3 份。不同容器实例使用各自日志目录。
+
+两个 Compose 配置默认使用持久日志卷，普通 `down/up` 保留日志。要直接写入宿主机目录，先准备权限，再在根目录或服务器的 `.env.local` 设置可选的 `LOGS_PATH`：
+
+```sh
+sudo install -d -o 1001 -g 1001 -m 0750 /srv/oh-my-workbench/logs
+```
+
+```dotenv
+LOGS_PATH=/srv/oh-my-workbench/logs
+```
+
+`LOGS_PATH` 仅供 Compose 选择挂载源，不传给应用。后续重建容器或 Action 更新部署文件时继续使用该目录。直接 `docker run` 时添加 `-v /srv/oh-my-workbench/logs:/app/apps/api/logs`。
+
+独立缩略图 Compose 的日志位于 `/app/logs/`，使用 `thumbnail_logs` 持久卷；该镜像运行用户为 `65534:65534`，绑定宿主目录时使用对应权限。
+
+```sh
+sudo tail -f /srv/oh-my-workbench/logs/api.log
+sudo cat /srv/oh-my-workbench/logs/api.log | jq 'select(.request_id == "实际请求编号")'
+```
+
 ### GitHub Actions 发布与部署
 
 推送 `vX.Y.Z` 标签会触发 [release.yaml](.github/workflows/release.yaml)。流程先确认标签格式及对应提交已进入 `main`，再构建 `linux/amd64`、`linux/arm64` 镜像，同时发布：

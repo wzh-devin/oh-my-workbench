@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
 	"mime"
 	"net/http"
 	"strconv"
@@ -15,6 +14,7 @@ import (
 	assetdomain "github.com/devin/oh-my-workbench/api/internal/modules/assets/domain"
 	assetservice "github.com/devin/oh-my-workbench/api/internal/modules/assets/service"
 	authhandler "github.com/devin/oh-my-workbench/api/internal/modules/auth/handler"
+	"github.com/devin/oh-my-workbench/api/internal/platform/logging"
 	"github.com/devin/oh-my-workbench/api/internal/shared/response"
 )
 
@@ -43,9 +43,10 @@ func fail(c *gin.Context, err error) {
 	case errors.Is(err, assetdomain.ErrConflict), errors.Is(err, assetdomain.ErrName), errors.Is(err, assetdomain.ErrLastView):
 		response.Fail(c, 409, err.Error())
 	case errors.Is(err, assetdomain.ErrDisabled), errors.Is(err, assetdomain.ErrPreviewUnavailable), errors.Is(err, assetdomain.ErrConnectionCheck):
+		logging.Error(c.Request.Context(), "assets.unavailable", err)
 		response.Fail(c, 503, err.Error())
 	default:
-		log.Printf("资产请求失败: %v", err)
+		logging.Error(c.Request.Context(), "assets.failed", err)
 		response.Fail(c, 503, "资产服务暂不可用，请重试")
 	}
 }

@@ -16,6 +16,7 @@ import (
 	authhandler "github.com/devin/oh-my-workbench/api/internal/modules/auth/handler"
 	maildomain "github.com/devin/oh-my-workbench/api/internal/modules/mail/domain"
 	mailservice "github.com/devin/oh-my-workbench/api/internal/modules/mail/service"
+	"github.com/devin/oh-my-workbench/api/internal/platform/logging"
 	"github.com/devin/oh-my-workbench/api/internal/shared/response"
 )
 
@@ -27,6 +28,7 @@ func NewHandler(service *mailservice.Service) *Handler { return &Handler{service
 
 func mailError(c *gin.Context, err error) {
 	if c.Writer.Written() {
+		logging.Error(c.Request.Context(), "mail.stream_failed", err)
 		return
 	}
 	status := http.StatusServiceUnavailable
@@ -46,6 +48,9 @@ func mailError(c *gin.Context, err error) {
 			message = err.Error()
 			break
 		}
+	}
+	if status >= 500 {
+		logging.Error(c.Request.Context(), "mail.failed", err)
 	}
 	response.Fail(c, status, message)
 }

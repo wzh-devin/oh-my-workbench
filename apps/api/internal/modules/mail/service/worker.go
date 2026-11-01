@@ -3,13 +3,13 @@ package service
 import (
 	"context"
 	"errors"
-	"log"
 	"sync"
 	"time"
 
 	imap "github.com/emersion/go-imap/v2"
 
 	maildomain "github.com/devin/oh-my-workbench/api/internal/modules/mail/domain"
+	"github.com/devin/oh-my-workbench/api/internal/platform/logging"
 )
 
 // 后台邮箱监听和推送任务的生命周期与断线恢复。
@@ -33,7 +33,7 @@ func (s *Service) Run(ctx context.Context) {
 	reconcile := func() {
 		accounts, err := s.repository.EnabledAccounts(ctx)
 		if err != nil {
-			log.Print("邮箱监听列表读取失败")
+			logging.Error(ctx, "mail.listeners_failed", err)
 			return
 		}
 		enabled := map[int64]bool{}

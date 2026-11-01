@@ -4,6 +4,7 @@ services:
       context: ../..
       dockerfile: deploy/gotenberg/renderer.Dockerfile
     read_only: true
+    volumes: ["thumbnail_logs:/app/logs"]
     tmpfs: ["/tmp:size=384m,mode=1777,noexec,nosuid"]
     mem_limit: 512m
     cpus: 1.0
@@ -47,3 +48,6 @@ networks:
   converter:
     internal: true
   ingress:
+
+volumes:
+  thumbnail_logs:

@@ -22,6 +22,7 @@
 **/*.test.*
 **/*.spec.*
 **/*.log
+**/logs
 **/*.tsbuildinfo
 **/.DS_Store
 apps/api/server

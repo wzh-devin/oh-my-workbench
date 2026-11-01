@@ -21,14 +21,16 @@ import (
 	todohandler "github.com/devin/oh-my-workbench/api/internal/modules/todos/handler"
 	todorepo "github.com/devin/oh-my-workbench/api/internal/modules/todos/repository"
 	todoservice "github.com/devin/oh-my-workbench/api/internal/modules/todos/service"
+	"github.com/devin/oh-my-workbench/api/internal/platform/logging"
 	"github.com/devin/oh-my-workbench/api/internal/shared/response"
 )
 
 func newRouter(db *gorm.DB, rdb *redis.Client, mailService *mailservice.Service, proxySettings *settingsservice.ProxyService, systemSettings *settingsservice.SystemService, signingKey string, assetServices ...*assetservice.Service) *gin.Engine {
 	handler := authhandler.NewHandler(authservice.NewService(authrepo.NewRepository(db, rdb), signingKey))
 	r := gin.New()
-	r.Use(gin.Recovery())
-	_ = r.SetTrustedProxies(nil)
+	r.Use(logging.HTTP())
+	_ = r.SetTrustedProxies([]string{"127.0.0.1", "::1"})
+	r.RemoteIPHeaders = []string{"X-Real-IP"}
 	api := r.Group("/api", func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
 		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
