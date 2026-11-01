@@ -93,6 +93,50 @@ jobs:
           ref: ${{ needs.build.outputs.commit }}
           persist-credentials: false
 
+      - name: Join NetBird and wait for SSH
+        timeout-minutes: 4
+        env:
+          NB_SETUP_KEY: ${{ secrets.NETBIRD_SETUP_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+        run: |
+          set -euo pipefail
+          : "${NB_SETUP_KEY:?Missing NETBIRD_SETUP_KEY in the deployment environment}"
+          : "${DEPLOY_HOST:?Missing DEPLOY_HOST in the deployment environment}"
+          [[ "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]] &&
+            ((10#$DEPLOY_PORT >= 1 && 10#$DEPLOY_PORT <= 65535)) || {
+              echo 'DEPLOY_PORT must be between 1 and 65535' >&2
+              exit 1
+            }
+
+          umask 077
+          printf '%s\n' "$NB_SETUP_KEY" > "$RUNNER_TEMP/netbird.key"
+          docker run -d \
+            --name netbird-ci \
+            --hostname "gha-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --network host \
+            --cap-add NET_ADMIN \
+            --cap-add SYS_ADMIN \
+            --cap-add SYS_RESOURCE \
+            --device /dev/net/tun \
+            -v "$RUNNER_TEMP/netbird.key:/run/secrets/setup_key:ro" \
+            -e NB_MANAGEMENT_URL=https://netbird.devin.wang \
+            -e NB_SETUP_KEY_FILE=/run/secrets/setup_key \
+            -e NB_LOG_FILE=console \
+            netbirdio/netbird:0.80.0
+
+          for ((attempt=0; attempt<30; attempt++)); do
+            if timeout 3 bash -c 'exec 3<>"/dev/tcp/$1/$2"' _ "$DEPLOY_HOST" "$DEPLOY_PORT" 2>/dev/null; then
+              echo 'Private SSH port is reachable'
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker exec netbird-ci netbird status -d || true
+          echo 'Cannot reach SSH; check NetBird registration, peer approval and the TCP port policy' >&2
+          exit 1
+
       - name: Deploy over SSH and verify
         env:
           APP_IMAGE: ${{ needs.build.outputs.image }}
@@ -106,3 +150,9 @@ jobs:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash deploy/docker/deploy-over-ssh.sh
+
+      - name: Cleanup NetBird
+        if: always()
+        run: |
+          docker rm -fv netbird-ci >/dev/null 2>&1 || true
+          rm -f "$RUNNER_TEMP/netbird.key"

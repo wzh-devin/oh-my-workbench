@@ -311,13 +311,18 @@ COOKIE_SECURE=true
 
 | Secret | 内容 |
 |---|---|
-| `DEPLOY_HOST` | 服务器 IP 或域名 |
+| `NETBIRD_SETUP_KEY` | CI 专用 NetBird Setup Key，使用 Reusable 类型并开启 Ephemeral Peers |
+| `DEPLOY_HOST` | 服务器的 NetBird IP 或可通过该网络访问的域名，例如 `100.105.58.148` |
 | `DEPLOY_USER` | SSH 部署账号 |
 | `DEPLOY_PASSWORD` | SSH 账号密码；与 `DEPLOY_SSH_KEY` 二选一 |
 | `DEPLOY_SSH_KEY` | 该账号的无口令 SSH 私钥，对应公钥预先加入服务器 authorized_keys；与 `DEPLOY_PASSWORD` 二选一 |
 | `DEPLOY_KNOWN_HOSTS` | 经可信渠道核对的服务器 known_hosts 完整记录；非 22 端口使用 `[host]:port` 记录 |
 
 使用用户名和密码时，配置 `DEPLOY_USER`、`DEPLOY_PASSWORD` 即可选择密码认证，服务器需允许 SSH 密码登录。同时配置密码和私钥时优先使用私钥。
+
+部署任务先启动 NetBird `0.80.0` 客户端，连接 `https://netbird.devin.wang`，等待 `DEPLOY_HOST:DEPLOY_PORT` 可达后才执行 SSH。在 NetBird 控制台为 Setup Key 配置 CI 专用自动分组，访问策略需允许该分组访问目标服务器的 TCP 部署端口；如启用节点审批，需允许 CI 节点完成审批。任务成功、失败或取消时都会清理客户端和本地 Key 文件；Ephemeral Peers 用于自动清理离线临时节点。参见 [NetBird Setup Key 配置](https://docs.netbird.io/manage/peers/register-machines-using-setup-keys)。
+
+所有部署 Secrets 必须属于工作流使用的 `production` 环境，或配置为仓库级 Actions Secrets；放在其他环境（例如 `HOME_DEPLOY`）中不会被该任务读取。
 
 可选 Variables：`DEPLOY_PATH` 默认 `/opt/oh-my-workbench`，`DEPLOY_PORT` 默认 `22`。无需配置 GHCR 密码：构建使用自动提供的 `GITHUB_TOKEN`，部署通过只读的短期 Token 拉取镜像，服务器临时登录文件退出后删除。手动拉取私有包时需要自行登录 GHCR，也可将包设为公开；详见 [GHCR 权限与认证](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)。
 
@@ -327,9 +332,11 @@ COOKIE_SECURE=true
 
 ```sh
 git push origin main
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.0.1
+git push origin v1.0.1
 ```
+
+修改工作流后需要推送指向新提交的版本标签；仅重新运行旧任务仍使用原版工作流。通常使用新的版本号；复用已有版本号会更新标签指向，并替换同名版本镜像。
 
 Action 将该版本的生产 Compose 和部署脚本通过 SSH 传到部署目录；Compose 固定为本次版本镜像。服务器依次执行：
 
