@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM node:22-bookworm-slim AS web-build
+FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS web-build
 WORKDIR /src
 RUN npm install --global pnpm@12.6.0
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
@@ -10,15 +10,17 @@ RUN --mount=type=cache,id=flowly-pnpm,target=/pnpm/store \
 COPY apps/web/ apps/web/
 RUN pnpm --filter @workbench/web build
 
-FROM golang:1.26.5-alpine AS api-build
+FROM --platform=$BUILDPLATFORM golang:1.26.5-alpine AS api-build
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /src
 COPY apps/api/go.mod apps/api/go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY apps/api/ ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/flowly-api ./cmd/server \
-    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/asset-renderer ./cmd/asset-renderer
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/flowly-api ./cmd/server \
+    && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/asset-renderer ./cmd/asset-renderer
 
 # Office conversion, PDF tools and CJK fonts ship with the application.
 FROM gotenberg/gotenberg:8.38.1

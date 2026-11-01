@@ -1,0 +1,21 @@
+services:
+  app:
+    image: ghcr.io/wzh-devin/oh-my-workbench:latest
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: "${DATABASE_URL:?Set external DATABASE_URL in .env.local}"
+      REDIS_ADDR: "${REDIS_ADDR:?Set external REDIS_ADDR in .env.local}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
+      COOKIE_SECURE: "${COOKIE_SECURE:-true}"
+    read_only: true
+    tmpfs:
+      - /tmp:size=1g,mode=1777,noexec,nosuid
+    shm_size: 256m
+    mem_limit: 2g
+    cpus: 2.0
+    pids_limit: 256
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 30s
+    restart: unless-stopped

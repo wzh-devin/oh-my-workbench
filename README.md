@@ -244,6 +244,68 @@ docker run -d --name oh-my-workbench -p 8080:8080 \
 
 Redis 有密码时另传 `REDIS_PASSWORD`。单实例默认 `WORKER_ID=1`，多实例需分别指定不同编号并连接同一业务数据库。
 
+### GitHub Actions 发布与部署
+
+推送 `vX.Y.Z` 标签会触发 [release.yaml](.github/workflows/release.yaml)。流程先确认标签格式及对应提交已进入 `main`，再构建 `linux/amd64`、`linux/arm64` 镜像，同时发布：
+
+```text
+ghcr.io/wzh-devin/oh-my-workbench:vX.Y.Z
+ghcr.io/wzh-devin/oh-my-workbench:latest
+```
+
+普通 `main` 推送不部署。版本标签不要重复使用；`latest` 指向最近发布的构建。发布流程串行执行，正在进行的部署不会被新标签自动取消。
+
+#### 服务器准备
+
+服务器安装 Docker、支持 `up --wait` 的 Compose V2 和 Bash，SSH 部署账号需要有 Docker 执行权限及部署目录的写权限。服务器只运行应用，PostgreSQL、Redis 使用已有外部服务。
+
+在部署目录（默认 `/opt/oh-my-workbench`）创建 `.env.local`，填写外部连接：
+
+```dotenv
+DATABASE_URL='postgres://user:password@pg-host:5432/workbench?sslmode=require'
+REDIS_ADDR=redis-host:6379
+REDIS_PASSWORD='your-redis-password'
+COOKIE_SECURE=true
+```
+
+将文件权限设为 `600`。HTTP 部署使用 `COOKIE_SECURE=false`。这些值仅保存在服务器，Action 不上传或覆盖 `.env.local`。
+
+#### GitHub 配置
+
+在仓库 **Settings → Environments → production** 中配置以下 Secrets（也可使用仓库级 Actions Secrets）：
+
+| Secret | 内容 |
+|---|---|
+| `DEPLOY_HOST` | 服务器 IP 或域名 |
+| `DEPLOY_USER` | SSH 部署账号 |
+| `DEPLOY_PASSWORD` | SSH 账号密码；与 `DEPLOY_SSH_KEY` 二选一 |
+| `DEPLOY_SSH_KEY` | 该账号的无口令 SSH 私钥，对应公钥预先加入服务器 authorized_keys；与 `DEPLOY_PASSWORD` 二选一 |
+| `DEPLOY_KNOWN_HOSTS` | 经可信渠道核对的服务器 known_hosts 完整记录；非 22 端口使用 `[host]:port` 记录 |
+
+使用用户名和密码时，配置 `DEPLOY_USER`、`DEPLOY_PASSWORD` 即可选择密码认证，服务器需允许 SSH 密码登录。同时配置密码和私钥时优先使用私钥。
+
+可选 Variables：`DEPLOY_PATH` 默认 `/opt/oh-my-workbench`，`DEPLOY_PORT` 默认 `22`。无需配置 GHCR 密码：构建使用自动提供的 `GITHUB_TOKEN`，部署通过只读的短期 Token 拉取镜像，服务器临时登录文件退出后删除。手动拉取私有包时需要自行登录 GHCR，也可将包设为公开；详见 [GHCR 权限与认证](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)。
+
+#### 发布
+
+将代码提交并推送到 `main` 后，创建并推送版本标签，例如：
+
+```sh
+git push origin main
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Action 将该版本的生产 Compose 和部署脚本通过 SSH 传到部署目录；Compose 固定为本次版本镜像。服务器依次执行：
+
+```sh
+docker compose --env-file .env.local pull
+docker compose --env-file .env.local down
+docker compose --env-file .env.local up -d --no-build --pull never --wait --wait-timeout 180
+```
+
+拉取失败不会停止当前应用；`down` 不删除数据卷。`down/up` 之间会有短暂停机。最后核对实际镜像 ID、容器健康、前端、API 和两类预览服务；失败时 Action 报错并显示容器状态，应用日志留在服务器查看。服务器无需 Git、Node.js 或 Go。
+
 ### 手动部署
 
 在仓库根目录构建并启动 API：
