@@ -4,7 +4,14 @@ set -euo pipefail
 umask 077
 registry_user=${1:?GHCR username is required}
 cd -- "$(dirname -- "$0")"
-compose=(docker compose --env-file .env.local -f compose.yaml)
+deployment_env=.env
+if [[ ! -f "$deployment_env" && -f .env.local ]]; then
+  deployment_env=.env.local
+fi
+compose=(docker compose --env-file "$deployment_env" -f compose.yaml)
+if [[ -f compose.override.yaml ]]; then
+  compose+=(-f compose.override.yaml)
+fi
 
 on_error() {
   status=$?
@@ -16,7 +23,10 @@ on_error() {
 }
 trap 'on_error "$LINENO"' ERR
 
-test -f .env.local
+if [[ ! -f "$deployment_env" ]]; then
+  printf 'Missing deployment configuration: create %s/.env with DATABASE_URL and REDIS_ADDR\n' "$PWD" >&2
+  exit 1
+fi
 "${compose[@]}" config --quiet
 image=$("${compose[@]}" config --images)
 # Keep the selected daemon when switching to an isolated registry login directory.

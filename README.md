@@ -260,7 +260,7 @@ Redis 有密码时另传 `REDIS_PASSWORD`。单实例默认 `WORKER_ID=1`，多�
 
 单个结构化文件达到 50MiB 后轮转，最多保留 5 份历史文件，历史保留 7 天；崩溃文件在下次进程启动时检查大小并轮转。Compose 同时将 Docker 标准输出日志限制为每份 10MiB、最多 3 份。不同容器实例使用各自日志目录。
 
-两个 Compose 配置默认使用持久日志卷，普通 `down/up` 保留日志。要直接写入宿主机目录，先准备权限，再在根目录或服务器的 `.env.local` 设置可选的 `LOGS_PATH`：
+两个 Compose 配置默认使用持久日志卷，普通 `down/up` 保留日志。要直接写入宿主机目录，先准备权限，再在开发根目录的 `.env.local` 或服务器的 `.env` 设置可选的 `LOGS_PATH`：
 
 ```sh
 sudo install -d -o 1001 -g 1001 -m 0750 /srv/oh-my-workbench/logs
@@ -294,7 +294,7 @@ ghcr.io/wzh-devin/oh-my-workbench:latest
 
 服务器安装 Docker、支持 `up --wait` 的 Compose V2 和 Bash，SSH 部署账号需要有 Docker 执行权限及部署目录的写权限。服务器只运行应用，PostgreSQL、Redis 使用已有外部服务。
 
-在部署目录（默认 `/opt/oh-my-workbench`）创建 `.env.local`，填写外部连接：
+在部署目录（默认 `/opt/oh-my-workbench`）创建 `.env`，填写外部连接：
 
 ```dotenv
 DATABASE_URL='postgres://user:password@pg-host:5432/workbench?sslmode=require'
@@ -303,7 +303,18 @@ REDIS_PASSWORD='your-redis-password'
 COOKIE_SECURE=true
 ```
 
-将文件权限设为 `600`。HTTP 部署使用 `COOKIE_SECURE=false`。这些值仅保存在服务器，Action 不上传或覆盖 `.env.local`。
+将文件权限设为 `600`。HTTP 部署使用 `COOKIE_SECURE=false`。这些值仅保存在服务器，Action 不上传或覆盖环境文件。部署脚本优先读取 `.env`，不存在时兼容已有的 `.env.local`；两者同时存在时使用 `.env`，配置错误时不会回退到另一份文件。本地开发仍使用仓库根目录的 `.env.local`。
+
+数据库和 Redis 位于同一服务器的其他 Docker 网络时，在部署目录创建 `compose.override.yaml`，让应用加入对应网络，并在 `.env` 中使用服务名连接。例如已有网络名为 `union-talk`：
+
+```yaml
+networks:
+  default:
+    external: true
+    name: union-talk
+```
+
+部署脚本自动合并该文件，Action 不上传或覆盖它。手动执行 Compose 时也需添加 `-f compose.yaml -f compose.override.yaml`。容器中的 `127.0.0.1` 指向容器自身，无法访问只绑定宿主机回环地址的数据库服务。
 
 #### GitHub 配置
 
@@ -341,9 +352,9 @@ git push origin v1.0.1
 Action 将该版本的生产 Compose 和部署脚本通过 SSH 传到部署目录；Compose 固定为本次版本镜像。服务器依次执行：
 
 ```sh
-docker compose --env-file .env.local pull
-docker compose --env-file .env.local down
-docker compose --env-file .env.local up -d --no-build --pull never --wait --wait-timeout 180
+docker compose --env-file .env pull
+docker compose --env-file .env down
+docker compose --env-file .env up -d --no-build --pull never --wait --wait-timeout 180
 ```
 
 拉取失败不会停止当前应用；`down` 不删除数据卷。`down/up` 之间会有短暂停机。最后核对实际镜像 ID、容器健康、前端、API 和两类预览服务；失败时 Action 报错并显示容器状态，应用日志留在服务器查看。服务器无需 Git、Node.js 或 Go。
