@@ -26,6 +26,9 @@ type Content struct {
 	Name, Type, ETag string
 	Size             int64
 	ModifiedAt       time.Time
+	connection       assetdomain.Connection
+	objectKey        string
+	objectVersionID  string
 }
 
 // OpenContent 每个 Range 请求都重查条目，不以 Blob ID 或远程 URL 绕过可见性。
@@ -100,5 +103,6 @@ func (s *Service) OpenRendition(ctx context.Context, userID, id int64, recipe st
 		contentType = "application/octet-stream"
 	}
 	success = true
-	return Content{Reader: object, Name: e.Name, Type: contentType, ETag: etag, Size: size, ModifiedAt: b.CreatedAt}, nil
+	return Content{Reader: object, Name: e.Name, Type: contentType, ETag: etag, Size: size, ModifiedAt: b.CreatedAt,
+		connection: c, objectKey: key, objectVersionID: version}, nil
 }

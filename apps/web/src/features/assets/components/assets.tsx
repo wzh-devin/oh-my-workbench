@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react"
+import { activateResource } from "@/lib/requests/invalidation"
 import { toast } from "sonner"
 import { Link, useSearchParams } from "react-router"
 import { cn } from "cn"
@@ -190,6 +191,11 @@ export function Assets() {
       ).values(),
     ],
   }
+  useEffect(() => {
+    const release = activateResource("assets")
+    if (userId) void loadAssets()
+    return release
+  }, [userId])
   const [params, setParams] = useSearchParams()
   const connectionId = params.get("connection") ?? "all"
   const parentId = params.get("folder")
@@ -226,7 +232,7 @@ export function Assets() {
   const [deleteIds, setDeleteIds] = useState<string[] | null>(null)
   const [renaming, setRenaming] = useState<RenameDraft | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
-  const [fileError, setFileError] = useState(false)
+  const [failedFile, setFailedFile] = useState<string | null>(null)
   const { run, download, remove, restore, busy, error, clearError } =
     useAssetOperations(() => setSelectedIds([]))
   const connection = data.connections.find(
@@ -289,17 +295,21 @@ export function Assets() {
   )
   const records = result.entries
   const fileId = params.get("file")
+  const fileInQuery = records.some((entry) => entry.id === fileId)
+  const fileError = !!fileId && failedFile === fileId && !fileInQuery
   useEffect(() => {
     const legacyFolder =
       parentId && !/^[1-9]\d*$/.test(parentId) ? parentId : null
     const requestedId = fileId ?? legacyFolder
     if (!requestedId || !userId || !hasStorage) return
+    // 已鉴权列表包含文件时复用元数据；深链不在当前批次中才补读详情。
+    if (!legacyFolder && (fileInQuery || result.status === "loading")) return
     const controller = new AbortController()
     void assetApi
       .entry(requestedId, controller.signal)
       .then((entry) => {
         if (!controller.signal.aborted) {
-          setFileError(false)
+          setFailedFile(null)
           rememberEntries([entry], userId)
           if (entry.id !== requestedId)
             setParams(
@@ -320,14 +330,23 @@ export function Assets() {
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return
-        setFileError(true)
+        setFailedFile(requestedId)
         toast.error(error instanceof Error ? error.message : "文件不可用", {
           id: "asset-file",
           action: { label: "重试", onClick: () => void loadAssets(true) },
         })
       })
     return () => controller.abort()
-  }, [fileId, parentId, userId, revision, hasStorage, setParams])
+  }, [
+    fileId,
+    parentId,
+    userId,
+    revision,
+    hasStorage,
+    setParams,
+    fileInQuery,
+    result.status,
+  ])
   const selected = records.filter((entry) => selectedIds.includes(entry.id))
   const selectedKeys = selected.map((entry) => entry.id)
   const previewFile = data.assets.find(
@@ -356,6 +375,7 @@ export function Assets() {
     folderId: string | null = null,
     nextView = "files"
   ) => {
+    result.retry()
     const next = new URLSearchParams()
     if (sourceId !== "all") next.set("connection", sourceId)
     if (folderId) next.set("folder", folderId)

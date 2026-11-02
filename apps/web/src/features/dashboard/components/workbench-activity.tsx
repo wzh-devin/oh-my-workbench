@@ -27,6 +27,15 @@ const dayFormat = new Intl.DateTimeFormat("en-CA", {
 export const workbenchActivity = (data: Workbench) => {
   const assets = activeAssets(data)
   const timestamps = [
+    ...Object.keys(data.todoSummary?.daily ?? {}).map(
+      (day) => `${day}T12:00:00+08:00`
+    ),
+    ...Object.keys(data.mailSummary?.daily ?? {}).map(
+      (day) => `${day}T12:00:00+08:00`
+    ),
+    ...Object.keys(data.assetSummary?.daily ?? {}).map(
+      (day) => `${day}T12:00:00+08:00`
+    ),
     ...data.todos.map((record) => record.createdAt),
     ...data.messages.map((record) => record.receivedAt),
     ...assets.map((record) => record.createdAt),
@@ -45,9 +54,11 @@ export const workbenchActivity = (data: Workbench) => {
     )
     return {
       day: day.slice(5).replace("-", "/"),
-      todos: data.todos.filter(
-        (record) => dayFormat.format(new Date(record.createdAt)) === day
-      ).length,
+      todos:
+        data.todoSummary?.daily[day] ??
+        data.todos.filter(
+          (record) => dayFormat.format(new Date(record.createdAt)) === day
+        ).length,
       mail:
         data.mailSummary?.daily[day] ??
         data.messages.filter(
@@ -78,7 +89,7 @@ export function WorkbenchActivity({
         </span>
       </SectionHeader>
       <CardContent className="flex flex-col gap-3 py-4">
-        {data.todos.length +
+        {(data.todoSummary?.total ?? data.todos.length) +
         (data.mailSummary?.total ?? data.messages.length) +
         (data.assetSummary?.total ?? activeAssets(data).length) ? (
           <>

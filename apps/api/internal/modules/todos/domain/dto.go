@@ -57,6 +57,7 @@ type Snapshot struct {
 
 // RawMessage 区分省略字段和显式 null，PATCH 清空日期和移动到收集箱共用此边界。
 type TaskRequest struct {
+	ID         string          `json:"id,omitempty"`
 	Version    int             `json:"version"`
 	ListID     json.RawMessage `json:"listId"`
 	Title      *string         `json:"title"`
@@ -71,6 +72,7 @@ type TaskRequest struct {
 }
 
 type ListRequest struct {
+	ID   string `json:"id,omitempty"`
 	Name string `json:"name"`
 }
 

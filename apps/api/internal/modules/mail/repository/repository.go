@@ -143,7 +143,8 @@ func (r *Repository) Query(ctx context.Context, userID, accountID int64, input m
 
 func (r *Repository) Message(ctx context.Context, userID, id int64) (maildomain.MessageView, error) {
 	view := maildomain.MessageView{Attachments: []maildomain.Attachment{}}
-	if err := r.db.WithContext(ctx).Where("user_id = ? AND id = ?", userID, id).First(&view.Message).Error; err != nil {
+	// Include the linked task ID so reading one mail never requires the task collection.
+	if err := r.db.WithContext(ctx).Table("omw_mail_message m").Select("m.*,(SELECT t.id FROM omw_todo t WHERE t.user_id=m.user_id AND t.source_kind='mail' AND t.source_ref=m.id::text ORDER BY t.id LIMIT 1) AS todo_id").Where("m.user_id = ? AND m.id = ?", userID, id).Take(&view).Error; err != nil {
 		return view, found(err)
 	}
 	err := r.db.WithContext(ctx).Where("user_id = ? AND message_id = ?", userID, id).Order("id").Find(&view.Attachments).Error

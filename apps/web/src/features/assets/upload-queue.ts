@@ -1,3 +1,7 @@
+import {
+  resourceIsActive,
+  notifyResourceChange,
+} from "@/lib/requests/invalidation"
 import { useSyncExternalStore } from "react"
 import { toast } from "sonner"
 import { z } from "zod"
@@ -331,7 +335,8 @@ const applyRemote = (id: string, upload: AssetUpload) => {
   if (upload.status === "completed") {
     if (previous?.status !== "completed") {
       toast.success("上传完成", { id: "asset-upload-complete" })
-      void loadAssets(true)
+      if (resourceIsActive("assets")) void loadAssets(true)
+      notifyResourceChange("assets")
     }
     files.delete(id)
   }

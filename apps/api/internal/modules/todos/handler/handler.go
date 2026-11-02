@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -34,7 +35,11 @@ func fail(c *gin.Context, err error) {
 }
 
 func read(c *gin.Context, input any) bool {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<20)
+	limit := int64(64 << 10)
+	if c.FullPath() == "/api/todos/import" {
+		limit = 16 << 20
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
 	decoder := json.NewDecoder(c.Request.Body)
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(input) != nil || decoder.Decode(new(any)) != io.EOF {
@@ -61,64 +66,30 @@ func finish(c *gin.Context, value any, err error) {
 	}
 }
 
-func (h *Handler) Snapshot(c *gin.Context) {
-	result, err := h.service.Snapshot(c.Request.Context(), authhandler.CurrentUserID(c))
-	finish(c, result, err)
-}
-
-func (h *Handler) CreateList(c *gin.Context) { h.saveList(c, 0) }
-
-func (h *Handler) UpdateList(c *gin.Context) {
-	if id, ok := routeID(c); ok {
-		h.saveList(c, id)
-	}
-}
-
-func (h *Handler) saveList(c *gin.Context, id int64) {
+func (h *Handler) SaveList(c *gin.Context) {
 	var input tododomain.ListRequest
 	if !read(c, &input) {
+		return
+	}
+	id, ok := mutationID(c, input.ID)
+	if !ok {
 		return
 	}
 	result, err := h.service.SaveList(c.Request.Context(), authhandler.CurrentUserID(c), id, input)
 	finish(c, result, err)
 }
 
-func (h *Handler) DeleteList(c *gin.Context) {
-	id, ok := routeID(c)
-	if !ok {
-		return
-	}
-	result, err := h.service.DeleteList(c.Request.Context(), authhandler.CurrentUserID(c), id)
-	finish(c, result, err)
-}
-
-func (h *Handler) CreateTask(c *gin.Context) { h.saveTask(c, 0) }
-
-func (h *Handler) UpdateTask(c *gin.Context) {
-	if id, ok := routeID(c); ok {
-		h.saveTask(c, id)
-	}
-}
-
-func (h *Handler) saveTask(c *gin.Context, id int64) {
+func (h *Handler) SaveTask(c *gin.Context) {
 	var input tododomain.TaskRequest
 	if !read(c, &input) {
 		return
 	}
-	result, err := h.service.SaveTask(c.Request.Context(), authhandler.CurrentUserID(c), id, input)
-	finish(c, result, err)
-}
-
-func (h *Handler) DeleteTask(c *gin.Context) {
-	id, ok := routeID(c)
+	id, ok := mutationID(c, input.ID)
 	if !ok {
 		return
 	}
-	var input tododomain.DeleteRequest
-	if !read(c, &input) {
-		return
-	}
-	finish(c, nil, h.service.DeleteTask(c.Request.Context(), authhandler.CurrentUserID(c), id, input.Version))
+	result, err := h.service.SaveTask(c.Request.Context(), authhandler.CurrentUserID(c), id, input)
+	finish(c, result, err)
 }
 
 func (h *Handler) Import(c *gin.Context) {
@@ -128,4 +99,29 @@ func (h *Handler) Import(c *gin.Context) {
 	}
 	result, err := h.service.Import(c.Request.Context(), authhandler.CurrentUserID(c), input)
 	finish(c, result, err)
+}
+
+// mutationID prevents an update from accidentally creating a new resource.
+func mutationID(c *gin.Context, value string) (int64, bool) {
+	if strings.HasSuffix(c.FullPath(), "/save") {
+		if value != "" {
+			fail(c, tododomain.ErrInvalid)
+			return 0, false
+		}
+		return 0, true
+	}
+	id, e := tododomain.ParseID(value)
+	if e != nil {
+		fail(c, e)
+		return 0, false
+	}
+	return id, true
+}
+func (h *Handler) DeleteBatch(c *gin.Context) {
+	var input tododomain.BatchRequest
+	if !read(c, &input) {
+		return
+	}
+	resource := strings.Split(strings.Trim(c.FullPath(), "/"), "/")
+	finish(c, nil, h.service.DeleteBatch(c.Request.Context(), authhandler.CurrentUserID(c), resource[len(resource)-2], input.Items))
 }

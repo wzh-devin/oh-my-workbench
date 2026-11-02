@@ -1,5 +1,10 @@
 import { useSyncExternalStore } from "react"
 import { toast } from "sonner"
+import {
+  notifyResourceChange,
+  resourceIsActive,
+} from "@/lib/requests/invalidation"
+import { coalesceRead } from "@/lib/requests/coalesce-read"
 import { mailApi, MailApiError, type MessageQuery } from "./api"
 import type { AccountInput, MailOverview, Message } from "./model"
 
@@ -63,36 +68,45 @@ export const setMailUser = (
     busyIds: [],
     revision: state.revision + 1,
   })
-  if (userId) void loadMail()
 }
-export const loadMail = async (invalidate = false) => {
-  if (!state.userId) return
-  reads?.abort()
-  const controller = new AbortController()
-  reads = controller
-  const owner = generation
-  try {
-    const overview = await mailApi.overview(controller.signal)
-    if (owner !== generation || controller.signal.aborted) return
-    toast.dismiss("mail-load")
-    // SSE 重连和轮询可能没有新数据，不通知所有消费者重复查询。
-    if (
-      invalidate ||
-      state.status !== "ready" ||
-      JSON.stringify(overview) !== JSON.stringify(state.overview)
-    )
-      publish({ overview, status: "ready", revision: state.revision + 1 })
-  } catch (error) {
-    if (owner !== generation || controller.signal.aborted) return
-    if (state.status !== "ready") publish({ status: "error" })
-    toast.error(error instanceof Error ? error.message : "读取邮箱失败", {
-      id: "mail-load",
-      action: { label: "重试", onClick: () => void loadMail() },
-    })
-    if (error instanceof MailApiError && error.status === 401)
-      void unauthorized?.()
-  }
-}
+export const loadMail = coalesceRead(
+  () => generation,
+  async (invalidate) => {
+    if (!state.userId) return
+    reads?.abort()
+    const controller = new AbortController()
+    reads = controller
+    const owner = generation
+    try {
+      const accounts = await mailApi.accounts(controller.signal)
+      const overview = {
+        ...state.overview,
+        accounts,
+        total: accounts.reduce((n, a) => n + a.total, 0),
+        unread: accounts.reduce((n, a) => n + a.unread, 0),
+      }
+      if (owner !== generation || controller.signal.aborted) return
+      toast.dismiss("mail-load")
+      // SSE 重连和轮询可能没有新数据，不通知所有消费者重复查询。
+      if (
+        invalidate ||
+        state.status !== "ready" ||
+        JSON.stringify(overview) !== JSON.stringify(state.overview)
+      )
+        publish({ overview, status: "ready", revision: state.revision + 1 })
+    } catch (error) {
+      if (owner !== generation || controller.signal.aborted) return
+      if (state.status !== "ready") publish({ status: "error" })
+      toast.error(error instanceof Error ? error.message : "读取邮箱失败", {
+        id: "mail-load",
+        action: { label: "重试", onClick: () => void loadMail() },
+      })
+      if (error instanceof MailApiError && error.status === 401)
+        void unauthorized?.()
+    }
+  },
+  () => reads?.abort()
+)
 
 /** A single mutation owns its toast; dialogs close only after a non-null result. */
 const mutate = async <T>(
@@ -108,7 +122,8 @@ const mutate = async <T>(
   try {
     const result = await request(controller.signal)
     if (owner !== generation || controller.signal.aborted) return null
-    if (reload) await loadMail(true)
+    if (reload && resourceIsActive("mail")) await loadMail(true)
+    notifyResourceChange("mail")
     if (owner !== generation || controller.signal.aborted) return null
     return result
   } catch (error) {
@@ -138,6 +153,7 @@ export const changeMailMessage = (
 export const setMailNotifications = (enabled: boolean) =>
   mutate("preferences", async (signal) => {
     await mailApi.preferences(enabled, signal)
+    publish({ overview: { ...state.overview, notificationsEnabled: enabled } })
     return true
   })
 // 回执已保存，后续刷新失败也不能让通知继续占位。
@@ -220,3 +236,29 @@ export const bulkMailMessages = (
   mutate("messages:bulk", (signal) =>
     mailApi.bulk({ ...scope, action }, signal)
   )
+
+/** 通知设置只读取偏好，保留邮箱列表尚未加载的状态。 */
+export const loadMailPreferences = async () => {
+  if (!state.userId) return
+  const owner = generation,
+    controller = new AbortController()
+  requests.add(controller)
+  try {
+    const value = await mailApi.readPreferences(controller.signal)
+    if (owner === generation && !controller.signal.aborted)
+      publish({
+        overview: {
+          ...state.overview,
+          notificationsEnabled: value.notificationsEnabled,
+        },
+      })
+  } catch (error) {
+    if (!controller.signal.aborted) {
+      toast.error(error instanceof Error ? error.message : "读取通知设置失败")
+      if (error instanceof MailApiError && error.status === 401)
+        void unauthorized?.()
+    }
+  } finally {
+    requests.delete(controller)
+  }
+}

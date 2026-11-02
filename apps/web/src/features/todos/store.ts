@@ -1,5 +1,10 @@
 import { useSyncExternalStore } from "react"
 import { toast } from "sonner"
+import {
+  notifyResourceChange,
+  resourceIsActive,
+} from "@/lib/requests/invalidation"
+import { coalesceRead } from "@/lib/requests/coalesce-read"
 import { todoApi, TodoApiError } from "./api"
 import { INBOX_ID, type Todo, type TodoChanges } from "./model"
 import type { TodoView, TodoPriority, ViewChanges } from "./configuration"
@@ -15,6 +20,8 @@ type Snapshot = {
   status: "loading" | "ready" | "error"
   error: string | null
   busyIds: string[]
+  counts: Record<string, number>
+  pageRevision: number
 }
 const emptyData = () => ({
   todoLists: [{ id: INBOX_ID, name: "收集箱" }],
@@ -28,6 +35,8 @@ let snapshot: Snapshot = {
   status: "loading",
   error: null,
   busyIds: [],
+  counts: {},
+  pageRevision: 0,
 }
 let generation = 0
 let revision = 0
@@ -67,59 +76,72 @@ export const setTodoUser = (
     status: "loading",
     error: null,
     busyIds: [],
+    counts: {},
+    pageRevision: snapshot.pageRevision + 1,
   })
-  if (userId) void loadTodos()
 }
 
-/** shortcut: 个人规模全量快照，任务超过万级或响应超出预算时改服务端分页。 */
-export const loadTodos = async () => {
-  if (!snapshot.userId) return
-  if (snapshot.busyIds.length) {
-    reloadAfterWrites = true
-    return
-  }
-  reloadAfterWrites = false
-  readController?.abort()
-  const controller = new AbortController()
-  readController = controller
-  const owner = generation
-  const started = revision
-  try {
-    const data = await todoApi.snapshot(controller.signal)
-    if (
-      owner !== generation ||
-      controller.signal.aborted ||
-      started !== revision
-    )
+/** 只加载导航配置与计数，任务记录由页面分页查询。 */
+export const loadTodos = coalesceRead(
+  () => generation,
+  async () => {
+    if (!snapshot.userId) return
+    if (snapshot.busyIds.length) {
+      reloadAfterWrites = true
       return
-    toast.dismiss("todos-load")
-    publish({
-      data: {
-        ...data,
-        todoLists: [{ id: INBOX_ID, name: "收集箱" }, ...data.todoLists],
-      },
-      status: "ready",
-      error: null,
-    })
-  } catch (error) {
-    if (
-      owner !== generation ||
-      controller.signal.aborted ||
-      started !== revision
-    )
-      return
-    publish({
-      status: snapshot.status === "ready" ? "ready" : "error",
-      error: error instanceof Error ? error.message : "读取待办失败，请重试",
-    })
-    toast.error(snapshot.error, {
-      id: "todos-load",
-      action: { label: "重试", onClick: () => void loadTodos() },
-    })
-    if (error instanceof TodoApiError && error.status === 401)
-      void onUnauthorized?.()
-  }
-}
+    }
+    reloadAfterWrites = false
+    readController?.abort()
+    const controller = new AbortController()
+    readController = controller
+    const owner = generation
+    const started = revision
+    try {
+      const [todoLists, todoViews, todoPriorities] = await Promise.all([
+        todoApi.lists(controller.signal),
+        todoApi.views(controller.signal),
+        todoApi.priorities(controller.signal),
+      ])
+      const counts = await todoApi.counts(controller.signal)
+      const data = { todoLists, todoViews, todoPriorities }
+      if (
+        owner !== generation ||
+        controller.signal.aborted ||
+        started !== revision
+      )
+        return
+      toast.dismiss("todos-load")
+      publish({
+        data: {
+          ...snapshot.data,
+          ...data,
+          todoLists: [{ id: INBOX_ID, name: "收集箱" }, ...data.todoLists],
+        },
+        counts,
+        status: "ready",
+        error: null,
+      })
+    } catch (error) {
+      if (
+        owner !== generation ||
+        controller.signal.aborted ||
+        started !== revision
+      )
+        return
+      publish({
+        status: snapshot.status === "ready" ? "ready" : "error",
+        error: error instanceof Error ? error.message : "读取待办失败，请重试",
+      })
+      toast.error(snapshot.error, {
+        id: "todos-load",
+        action: { label: "重试", onClick: () => void loadTodos() },
+      })
+      if (error instanceof TodoApiError && error.status === 401)
+        void onUnauthorized?.()
+    }
+  },
+  () => readController?.abort()
+)
 
 /** 操作成功后才发布记录；版本冲突保留草稿并补读最新状态。 */
 const mutate = async <T>(
@@ -129,7 +151,6 @@ const mutate = async <T>(
 ): Promise<T | null> => {
   if (
     !snapshot.userId ||
-    snapshot.status !== "ready" ||
     snapshot.busyIds.includes(key) ||
     snapshot.busyIds.includes("import") ||
     (key === "import" && snapshot.busyIds.length > 0)
@@ -145,6 +166,9 @@ const mutate = async <T>(
     if (owner !== generation || controller.signal.aborted) return null
     revision++
     commit(result)
+    publish({ pageRevision: snapshot.pageRevision + 1 })
+    void refreshTodoCounts()
+    notifyResourceChange("todos")
     return result
   } catch (error) {
     if (owner !== generation || controller.signal.aborted) return null
@@ -156,15 +180,24 @@ const mutate = async <T>(
     if (
       error instanceof TodoApiError &&
       (error.status === 409 || error.status === 404)
-    )
-      reloadAfterWrites = true
+    ) {
+      publish({ pageRevision: snapshot.pageRevision + 1 })
+      if (/^[1-9]\d*$/.test(key)) {
+        try {
+          const task = await todoApi.detail(key, controller.signal)
+          if (owner === generation && !controller.signal.aborted) upsert([task])
+        } catch {
+          /* The page refresh resolves a deleted task; keep the edit draft. */
+        }
+      } else reloadAfterWrites = true
+    }
     return null
   } finally {
     controllers.delete(controller)
     if (owner === generation) {
       revision++
       publish({ busyIds: snapshot.busyIds.filter((id) => id !== key) })
-      if (reloadAfterWrites && !snapshot.busyIds.length) void loadTodos()
+      if (reloadAfterWrites && !snapshot.busyIds.length) void loadTodos(true)
     }
   }
 }
@@ -186,7 +219,10 @@ export const createTodo = (changes: TodoChanges) =>
     (todo) => upsert([todo])
   )
 /** 所有任务修改入口共用成功反馈，避免行内操作静默或表单重复提示。 */
-export const updateTodo = (todo: Todo, changes: TodoChanges) =>
+export const updateTodo = (
+  todo: Pick<Todo, "id" | "version">,
+  changes: TodoChanges
+) =>
   mutate(
     todo.id,
     (signal) => todoApi.update(todo.id, todo.version, changes, signal),
@@ -227,12 +263,16 @@ export const deleteTodoList = (id: string) =>
   mutate(
     id,
     (signal) => todoApi.removeList(id, signal),
-    (result) => {
-      upsert(result.todos)
+    () => {
       publish({
         data: {
           ...snapshot.data,
           todoLists: snapshot.data.todoLists.filter((list) => list.id !== id),
+          todos: snapshot.data.todos.map((task) =>
+            task.listId === id
+              ? { ...task, listId: INBOX_ID, version: task.version + 1 }
+              : task
+          ),
         },
       })
     }
@@ -298,3 +338,45 @@ export const saveTodoPriorities = (priorities: TodoPriority[]) =>
   )
 /** 所有消费入口共享同一个只含当前用户数据的快照。 */
 export const useTodos = () => useSyncExternalStore(subscribe, () => snapshot)
+
+/** 当前页合并进有界详情缓存，不使查询自身再次失效。 */
+export const rememberTodos = (todos: Todo[], userId: string) => {
+  if (snapshot.userId !== userId) return
+  upsert(todos)
+  if (snapshot.data.todos.length > 600)
+    publish({
+      data: { ...snapshot.data, todos: snapshot.data.todos.slice(-600) },
+    })
+}
+/** 写入后只重读侧栏计数，不拉取任务全集。 */
+export const refreshTodoCounts = coalesceRead(
+  () => generation,
+  async () => {
+    if (
+      !snapshot.userId ||
+      snapshot.status !== "ready" ||
+      !resourceIsActive("todos")
+    )
+      return
+    const userId = snapshot.userId,
+      controller = new AbortController()
+    controllers.add(controller)
+    try {
+      const counts = await todoApi.counts(controller.signal)
+      if (snapshot.userId === userId && !controller.signal.aborted)
+        publish({ counts })
+    } catch (error) {
+      if (
+        !controller.signal.aborted &&
+        error instanceof TodoApiError &&
+        error.status === 401
+      )
+        void onUnauthorized?.()
+    } finally {
+      controllers.delete(controller)
+    }
+  }
+)
+
+/** 页面读取遇到401时复用全局会话校验。 */
+export const refreshTodoSession = () => onUnauthorized?.()

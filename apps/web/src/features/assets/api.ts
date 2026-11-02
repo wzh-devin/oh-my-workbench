@@ -2,7 +2,6 @@ import { z } from "zod"
 import { storageSchema } from "@/features/workbench/model"
 import {
   entrySchema,
-  overviewSchema,
   operationSchema,
   previewSchema,
   thumbnailSchema,
@@ -92,11 +91,15 @@ export const assetApi = {
       z.array(uploadSchema),
       signal
     ),
-  overview: (signal: AbortSignal) =>
-    assetRequest("/overview", "GET", overviewSchema, signal),
-  query: (input: AssetQuery, signal: AbortSignal) =>
+  connections: (signal: AbortSignal) =>
+    assetRequest("/connections", "GET", z.array(storageSchema), signal),
+  directories: (signal: AbortSignal) =>
+    assetRequest("/directories", "GET", z.array(entrySchema), signal),
+  views: (signal: AbortSignal) =>
+    assetRequest("/views", "GET", z.array(viewSchema), signal),
+  page: (input: AssetQuery, signal: AbortSignal) =>
     assetRequest(
-      "/entries/query",
+      "/entries/page",
       "POST",
       z.object({
         entries: z.array(entrySchema),
@@ -105,7 +108,7 @@ export const assetApi = {
         nextCursor: z.string().default(""),
       }),
       signal,
-      input
+      { ...input, pageNum: (input.page ?? 0) + 1, page: undefined }
     ),
   entry: (id: string, signal: AbortSignal) =>
     assetRequest(
@@ -120,11 +123,11 @@ export const assetApi = {
     signal: AbortSignal
   ) =>
     assetRequest(
-      id ? `/connections/${id}` : "/connections",
-      id ? "PATCH" : "POST",
+      id ? "/connections/update" : "/connections/save",
+      "POST",
       storageSchema,
       signal,
-      input
+      { ...input, ...(id ? { id } : {}) }
     ),
   testConnection: (id: string, signal: AbortSignal) =>
     assetRequest(`/connections/${id}/test`, "POST", storageSchema, signal),
@@ -136,7 +139,7 @@ export const assetApi = {
       legacyId?: string
     },
     signal: AbortSignal
-  ) => assetRequest("/folders", "POST", entrySchema, signal, input),
+  ) => assetRequest("/entries/save", "POST", entrySchema, signal, input),
   change: (
     id: string,
     input: {
@@ -146,9 +149,26 @@ export const assetApi = {
       opened?: boolean
     },
     signal: AbortSignal
-  ) => assetRequest(`/entries/${id}`, "PATCH", entrySchema, signal, input),
-  batch: (input: unknown, signal: AbortSignal) =>
-    assetRequest("/entries/batch", "POST", operationSchema, signal, input),
+  ) =>
+    assetRequest("/entries/update", "POST", entrySchema, signal, {
+      ...input,
+      id,
+    }),
+  batch: (
+    input: { action: string } & Record<string, unknown>,
+    signal: AbortSignal
+  ) => {
+    const action = z
+      .enum(["move", "copy", "trash", "restore", "delete", "star"])
+      .parse(input.action)
+    return assetRequest(
+      `/entries/${action}Batch`,
+      "POST",
+      operationSchema,
+      signal,
+      input
+    )
+  },
   operation: (id: string, signal: AbortSignal) =>
     assetRequest(`/operations/${id}`, "GET", operationSchema, signal),
   saveView: (
@@ -157,15 +177,15 @@ export const assetApi = {
     signal: AbortSignal
   ) =>
     assetRequest(
-      view ? `/views/${view.id}` : "/views",
-      view ? "PATCH" : "POST",
+      view ? "/views/update" : "/views/save",
+      "POST",
       viewSchema,
       signal,
-      { ...input, ...(view ? { version: view.version } : {}) }
+      { ...input, ...(view ? { id: view.id, version: view.version } : {}) }
     ),
   deleteView: (view: AssetView, signal: AbortSignal) =>
-    assetRequest(`/views/${view.id}`, "DELETE", z.null(), signal, {
-      version: view.version,
+    assetRequest("/views/deleteBatch", "POST", z.null(), signal, {
+      items: [{ id: view.id, version: view.version }],
     }),
   initUpload: (input: UploadInput, signal: AbortSignal) =>
     assetRequest("/uploads/init", "POST", uploadSchema, signal, input),
@@ -261,6 +281,46 @@ export const putAssetPart = (
   })
 export const assetContentURL = (id: string, mode?: "preview" | "download") =>
   `/api/assets/entries/${encodeURIComponent(id)}/content${mode ? `?${mode}=1` : ""}`
+
+const contentAccessSchema = z.object({
+  url: z.string().min(1),
+  expiresAt: z.iso.datetime().nullable(),
+  cacheKey: z.string(),
+})
+const contentLinks = new Map<string, z.infer<typeof contentAccessSchema>>()
+export const clearAssetContentLinks = () => contentLinks.clear()
+
+/** 每次打开仍鉴权；只复用同一版本且未到期的地址，让浏览器复用原图缓存。 */
+export async function getAssetContentURL(
+  id: string,
+  mode: "preview" | "download" | undefined,
+  signal: AbortSignal,
+  refresh = false
+) {
+  const access = await assetRequest(
+    `/entries/${encodeURIComponent(id)}/access${mode ? `?${mode}=1` : ""}`,
+    "GET",
+    contentAccessSchema,
+    signal
+  )
+  const key = `${id}:${mode ?? "original"}`,
+    cached = contentLinks.get(key)
+  // 过期判断只在异步访问请求中读取时钟，不在React渲染过程中执行。
+  if (
+    !refresh &&
+    cached?.expiresAt &&
+    cached.cacheKey === access.cacheKey &&
+    Date.parse(cached.expiresAt) > Date.now() + 30_000
+  )
+    return cached.url
+  contentLinks.delete(key)
+  if (access.expiresAt) {
+    contentLinks.set(key, access)
+    if (contentLinks.size > 100)
+      contentLinks.delete(contentLinks.keys().next().value!)
+  }
+  return access.url
+}
 
 /** 产物版本只用于缓存定位，读取权限仍由后端按文件ID检查。 */
 export const assetThumbnailURL = (id: string, version: string) =>

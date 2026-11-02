@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { activateResource } from "@/lib/requests/invalidation"
 import { Link, useSearchParams } from "react-router"
 import {
   CalendarDaysIcon,
@@ -11,6 +12,9 @@ import {
   Settings2Icon,
   ListChecksIcon,
 } from "lucide-react"
+import type { PaginationState } from "@tanstack/react-table"
+import { useTaskPage } from "../use-task-page"
+import { todoApi } from "../api"
 import type { ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
 import type { DataGridFeatures } from "@/components/reui/data-grid/data-grid"
@@ -37,7 +41,7 @@ import { DeleteConfirm } from "@/features/workbench/dialogs"
 import { type Todo } from "@/features/workbench/model"
 import { RecordHint, RecordsGrid } from "@/features/workbench/records-grid"
 import { useWorkbench } from "@/features/workbench/store"
-import { INBOX_ID, newTask, sortTasks } from "../task-rules"
+import { INBOX_ID, newTask } from "../task-rules"
 import { useToday } from "../use-today"
 import {
   createTodo,
@@ -46,6 +50,8 @@ import {
   deleteTodoList,
   deleteTodoView,
   useTodos,
+  loadTodos,
+  rememberTodos,
 } from "../store"
 import { TodoState } from "./todo-state"
 import { TodoImport } from "./todo-import"
@@ -60,7 +66,6 @@ import {
   compileTodoViews,
   compileTodoRule,
   queryToRule,
-  taskSearchText,
   viewTaskDefaults,
 } from "../view-rules"
 import type { TodoView } from "../configuration"
@@ -68,7 +73,16 @@ import type { TodoView } from "../configuration"
 /** 智能视图只派生任务；清单、日期计划和截止日期保持各自含义。 */
 export function Todos() {
   const { data } = useWorkbench()
-  const { busyIds, status } = useTodos()
+  const { busyIds, status, userId, counts } = useTodos()
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 10,
+  })
+  useEffect(() => {
+    const release = activateResource("todos")
+    if (userId) void loadTodos()
+    return release
+  }, [userId])
   const [editorRevision, setEditorRevision] = useState(0)
   const today = useToday()
   const [params, setParams] = useSearchParams()
@@ -145,29 +159,47 @@ export function Todos() {
       toast.dismiss("todo-filter-rule")
     }
   }, [temporaryRule.error])
-  const records = useMemo(
-    () =>
-      sortTasks(
-        data.todos.filter(
-          (todo) =>
-            (listId ? todo.listId === listId : selectedView?.match(todo)) &&
-            taskSearchText(todo).includes(search.toLowerCase()) &&
-            temporaryRule.match(todo)
-        ),
-        sort ?? currentView?.sort ?? "due",
-        data.todoPriorities
-      ),
-    [
-      data.todos,
-      data.todoPriorities,
-      listId,
-      selectedView,
+  const queryKey = JSON.stringify({
+    listId,
+    viewId: currentView?.id,
+    search,
+    sort,
+    query,
+  })
+  const [previousQuery, setPreviousQuery] = useState(queryKey)
+  if (previousQuery !== queryKey) {
+    setPreviousQuery(queryKey)
+    setPagination((current) => ({ ...current, pageIndex: 0 }))
+  }
+  const page = useTaskPage(
+    {
+      pageNum: pagination.pageIndex + 1,
+      pageSize: pagination.pageSize,
+      viewId: currentView?.id ?? "",
+      listId: listId ?? "",
       search,
-      temporaryRule,
-      sort,
-      currentView?.sort,
-    ]
+      sort: sort ?? currentView?.sort ?? "due",
+      ...(query.rules.length ? { filterQuery: queryToRule(query, false) } : {}),
+    },
+    status === "ready" && !viewError && !temporaryRule.error
   )
+  const records = page.records
+  const taskId = params.get("task")
+  const cachedTask = data.todos.some((task) => task.id === taskId)
+  useEffect(() => {
+    if (!taskId || !userId || cachedTask) return
+    const controller = new AbortController()
+    void todoApi
+      .detail(taskId, controller.signal)
+      .then((task) => {
+        if (!controller.signal.aborted) rememberTodos([task], userId)
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted)
+          toast.error(error instanceof Error ? error.message : "待办不可用")
+      })
+    return () => controller.abort()
+  }, [taskId, userId, cachedTask])
   const clearFilters = () => {
     setSearch("")
     setQuery(createFilterQuery())
@@ -179,6 +211,8 @@ export function Todos() {
     setParams(next)
   }
   const changeNavigation = (id: string) => {
+    page.retry()
+    setPagination((current) => ({ ...current, pageIndex: 0 }))
     setSearch("")
     setQuery(createFilterQuery())
     setSort(null)
@@ -384,11 +418,11 @@ export function Todos() {
                 <PlusIcon aria-hidden="true" />
               </Button>
             ),
-            items: compiledViews.map(({ view, match, error }) => ({
+            items: compiledViews.map(({ view, error }) => ({
               id: `view:${view.id}`,
               label: view.name,
               icon: <ViewIcon name={view.icon} />,
-              ...(error ? {} : { badge: data.todos.filter(match).length }),
+              ...(error ? {} : { badge: counts[`view:${view.id}`] ?? 0 }),
             })),
           },
           {
@@ -416,9 +450,7 @@ export function Todos() {
                 ) : (
                   <ListTodoIcon aria-hidden="true" />
                 ),
-              badge: data.todos.filter(
-                (todo) => todo.listId === list.id && !todo.done
-              ).length,
+              badge: counts[`list:${list.id}`] ?? 0,
             })),
           },
         ]}
@@ -507,6 +539,14 @@ export function Todos() {
             title={title}
             icon={<ListTodoIcon className="size-4" aria-hidden="true" />}
             records={records}
+            loading={page.status === "loading"}
+            server={{
+              total: page.total,
+              pagination,
+              onPaginationChange: setPagination,
+              sorting: [],
+              onSortingChange: () => {},
+            }}
             columns={columns}
             leadingContent={
               <>
@@ -563,13 +603,25 @@ export function Todos() {
             empty={
               <EmptyState
                 title={
-                  search || query.rules.length ? "没有匹配的待办" : "暂无待办"
+                  page.status === "error"
+                    ? "待办读取失败"
+                    : search || query.rules.length
+                      ? "没有匹配的待办"
+                      : "暂无待办"
                 }
-                action={search || query.rules.length ? "清除筛选" : "新增待办"}
+                action={
+                  page.status === "error"
+                    ? "重试"
+                    : search || query.rules.length
+                      ? "清除筛选"
+                      : "新增待办"
+                }
                 onAction={
-                  search || query.rules.length
-                    ? clearFilters
-                    : () => setEditing("new")
+                  page.status === "error"
+                    ? page.retry
+                    : search || query.rules.length
+                      ? clearFilters
+                      : () => setEditing("new")
                 }
               />
             }
@@ -629,7 +681,7 @@ export function Todos() {
           deleting === "view"
             ? `“${currentView?.name ?? ""}”`
             : deleting === "list"
-              ? `${data.todos.filter((todo) => todo.listId === listId).length} 项待办将移入收集箱。`
+              ? `${counts[`listTotal:${listId}`] ?? 0} 项待办将移入收集箱。`
               : `“${deleting?.title ?? ""}”`
         }
         onConfirm={async () => {

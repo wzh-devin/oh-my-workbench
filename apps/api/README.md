@@ -21,6 +21,36 @@ cmd/server/main.go
     → app.newRouter / Gin
 ```
 
+## 业务接口与请求时机
+
+配置、列表、详情、统计独立读取。Session 只维护身份、邮件事件流与后台上传；进入页面、点击当前菜单或切换视图、目录、分页和筛选时读取对应列表。短暂切换窗口不会刷新所有模块。
+
+| 职责                       | 接口                                                                   |
+| -------------------------- | ---------------------------------------------------------------------- |
+| Todo 导航配置、侧栏计数    | `GET /api/todos/lists`、`/views`、`/priorities`、`/counts`             |
+| Todo 当前页、单条详情      | `POST /api/todos/tasks/page`、`GET /api/todos/tasks/:id`               |
+| 邮箱配置、通知偏好         | `GET /api/mail/accounts`、`/preferences`                               |
+| 邮件当前页、单封详情       | `POST /api/mail/messages/page`、`GET /api/mail/messages/:id`           |
+| 资产连接、视图、目录、统计 | `GET /api/assets/connections`、`/views`、`/directories`、`/statistics` |
+| 资产当前批次、单条详情     | `POST /api/assets/entries/page`、`GET /api/assets/entries/:id`         |
+| Dashboard                  | `GET /api/workbench/statistics`、`/issues`、`/records/page`            |
+| 通知分页与全部已读         | `POST /api/workbench/notifications/page`、`/notifications/readAll`     |
+
+复杂分页统一使用 POST，完整筛选树放在 JSON 请求体，避免 URL 长度限制。`pageNum` 从 1 开始，分页请求不会返回其他模块的业务数据，也不提供重复的 `query` 或混合快照读取接口。
+
+```http
+POST /api/todos/tasks/page
+Content-Type: application/json
+
+{"pageNum":1,"pageSize":10,"viewId":"2114998810068385792","search":"","sort":"due","filterQuery":{"schemaVersion":1,"root":{"kind":"constant","value":true}}}
+```
+
+Todo 返回 `records / total / pageNum / pageSize`，在数据库执行筛选、计数与分页，只读取当前页的步骤。邮件返回 `messages / total / nextAfter`；资产连续浏览返回 `entries / hasMore / nextCursor`，保留游标加载。筛选树按原始 AND、OR、NOT 及嵌套关系执行，不能展平成条件列表。普通 JSON 请求最多 64 KiB，规则引擎继续校验规则长度、层数、节点数和字段。
+
+Todo 的视图、清单、任务，以及资产的连接、视图、条目使用 `POST .../save` 和 `POST .../update`；更新在请求体携带 `id`，有版本的资源同时携带 `version`。Todo 删除使用 `POST .../deleteBatch`，请求体为 `{"items":[{"id":"2114998810068385792","version":1}]}`，最多 100 项；整个批次在同一事务内检查归属和版本，视图至少保留一个。删除清单仅将任务移入收集箱，不返回任务全集。
+
+资产文件操作使用 `POST /api/assets/entries/{move|copy|trash|restore|delete|star}Batch`，继续携带条目版本和 `requestKey` 保证重试幂等。资产视图删除使用 `/views/deleteBatch`。邮箱账号使用 `/accounts/save`、`/accounts/update`，邮件状态使用 `/messages/update`。同步、上传分片、内容、缩略图和预览保留各自业务接口。
+
 ## 数据库迁移
 
 Goose v3.29.0 作为 Go 库使用，无需安装迁移 CLI。`migrations/*.sql` 通过标准库 `go:embed` 编译进二进制，运行时不依赖 SQL 文件所在目录。
@@ -49,14 +79,14 @@ Goose 负责执行和版本记录，不根据 GORM 模型生成 SQL。已执行�
 
 ## 命令
 
-| 命令 | 用途 |
-| --- | --- |
-| `go run ./cmd/server` | 执行待完成迁移并启动服务 |
+| 命令                                  | 用途                             |
+| ------------------------------------- | -------------------------------- |
+| `go run ./cmd/server`                 | 执行待完成迁移并启动服务         |
 | `go build -o bin/server ./cmd/server` | 构建 `bin/server`，包含 SQL 文件 |
-| `./bin/server` | 运行构建后的服务 |
-| `gofmt -w cmd internal migrations` | 格式化 Go 源码 |
-| `go vet ./...` | 静态检查 |
-| `go test ./...` | 运行测试 |
+| `./bin/server`                        | 运行构建后的服务                 |
+| `gofmt -w cmd internal migrations`    | 格式化 Go 源码                   |
+| `go vet ./...`                        | 静态检查                         |
+| `go test ./...`                       | 运行测试                         |
 
 本地 PostgreSQL 集成测试通过 `TEST_DATABASE_URL` 指定隔离测试库：
 
@@ -135,38 +165,38 @@ Handler 负责 HTTP 协议；Service 负责业务校验和流程编排；所有 
 
 所有接口安装现有会话校验，身份只能取服务端；JSON业务ID为字符串，复用code/message/data信封：
 
-| 方法 | /api/mail 下的路径 | 用途 |
-| --- | --- | --- |
-| GET / POST | /accounts | 列表 / 验证并添加 |
-| PATCH | /accounts/:id | 名称、凭证、自动同步、来信通知；携带version |
-| POST | /accounts/:id/sync | 202返回已有或新建同步任务 |
-| GET | /sync-jobs/:id | 任务状态与处理数量 |
-| POST | /messages/query | accountId/searchText/filterQuery/page/pageSize/sort/archived/afterId |
-| POST | /messages/bulk | 同列表筛选范围，action 为 read 或 archive-read；返回 affected |
-| GET / PATCH | /messages/:id | 详情 / 阅读星标、归档恢复与version |
-| GET | /attachments/:id/download | 安全附件下载 |
-| GET | /overview | 全量计数、按上海日期聚合的活动、最近100封邮件头与通知 |
-| GET | /events | SSE失效通知；重连读取数据库状态 |
-| GET | /notifications?before=:id | 每页100条，before为上一页末尾ID |
-| PATCH | /notifications/read | ids数组或all:true；通知已读独立于邮件已读 |
-| PUT | /preferences | enabled控制全局邮件通知 |
-| GET | /push/config | 公开VAPID公钥和邮箱配置状态 |
-| POST / DELETE | /push/subscriptions | 注册 / 解绑当前浏览器订阅 |
+| 方法          | /api/mail 下的路径        | 用途                                                                 |
+| ------------- | ------------------------- | -------------------------------------------------------------------- |
+| GET / POST    | /accounts                 | 列表 / 验证并添加                                                    |
+| PATCH         | /accounts/:id             | 名称、凭证、自动同步、来信通知；携带version                          |
+| POST          | /accounts/:id/sync        | 202返回已有或新建同步任务                                            |
+| GET           | /sync-jobs/:id            | 任务状态与处理数量                                                   |
+| POST          | /messages/query           | accountId/searchText/filterQuery/page/pageSize/sort/archived/afterId |
+| POST          | /messages/bulk            | 同列表筛选范围，action 为 read 或 archive-read；返回 affected        |
+| GET / PATCH   | /messages/:id             | 详情 / 阅读星标、归档恢复与version                                   |
+| GET           | /attachments/:id/download | 安全附件下载                                                         |
+| GET           | /overview                 | 全量计数、按上海日期聚合的活动、最近100封邮件头与通知                |
+| GET           | /events                   | SSE失效通知；重连读取数据库状态                                      |
+| GET           | /notifications?before=:id | 每页100条，before为上一页末尾ID                                      |
+| PATCH         | /notifications/read       | ids数组或all:true；通知已读独立于邮件已读                            |
+| PUT           | /preferences              | enabled控制全局邮件通知                                              |
+| GET           | /push/config              | 公开VAPID公钥和邮箱配置状态                                          |
+| POST / DELETE | /push/subscriptions       | 注册 / 解绑当前浏览器订阅                                            |
 
 查询例：POST /api/mail/messages/query，提交 {"accountId":"all","searchText":"项目","page":1,"pageSize":20,"sort":"newest"}。返回 {"code":0,"message":"success","data":{"messages":[],"total":0}}。pageSize最多100，sort为newest/oldest/subject；filterQuery采用共享schemaVersion:1规则。PATCH邮件提交 {"version":1,"read":true}；陈旧版本409，越权记录404。
 
 数据库字段、默认值和索引见 migrations/20261030120000_mail.sql：
 
-| 表 | 职责与关键索引 |
-| --- | --- |
-| omw_mail_account | 账号、密文、开关、版本、连接状态、监听租约；用户＋小写邮箱唯一 |
-| omw_mail_mailbox | INBOX代次、历史边界/游标、实时游标；账号＋文件夹唯一 |
-| omw_mail_message | 邮件头、正文缓存、本地状态；文件夹＋UIDVALIDITY＋UID唯一，用户/账号/收信时间索引 |
-| omw_mail_attachment | MIME部件与文件名/类型/传输编码/大小；邮件＋部件唯一 |
-| omw_mail_sync_job | 同步来源、状态、计数与错误；每账号最多一个queued/running任务 |
-| omw_mail_notification | 来信事件与通知已读；用户＋邮件唯一 |
-| omw_push_subscription | 浏览器endpoint、公钥、auth及绑定用户；endpoint唯一 |
-| omw_mail_push_delivery | 按订阅投递、租约、重试；通知＋订阅唯一，待处理时间部分索引 |
+| 表                     | 职责与关键索引                                                                   |
+| ---------------------- | -------------------------------------------------------------------------------- |
+| omw_mail_account       | 账号、密文、开关、版本、连接状态、监听租约；用户＋小写邮箱唯一                   |
+| omw_mail_mailbox       | INBOX代次、历史边界/游标、实时游标；账号＋文件夹唯一                             |
+| omw_mail_message       | 邮件头、正文缓存、本地状态；文件夹＋UIDVALIDITY＋UID唯一，用户/账号/收信时间索引 |
+| omw_mail_attachment    | MIME部件与文件名/类型/传输编码/大小；邮件＋部件唯一                              |
+| omw_mail_sync_job      | 同步来源、状态、计数与错误；每账号最多一个queued/running任务                     |
+| omw_mail_notification  | 来信事件与通知已读；用户＋邮件唯一                                               |
+| omw_push_subscription  | 浏览器endpoint、公钥、auth及绑定用户；endpoint唯一                               |
+| omw_mail_push_delivery | 按订阅投递、租约、重试；通知＋订阅唯一，待处理时间部分索引                       |
 
 Web Push由两条后台消费者领取数据库任务，失败指数退避，最多10次；404/410停用失效订阅。投递至少一次，通知使用稳定tag收敛重复显示，不承诺网络端到端exactly-once。站内SSE仅刷新状态，避免与系统推送重复弹通知。payload不携带主题、发件人或正文，打开后仍须登录。现有通知设置保存到服务端，关闭时取消待发任务；退出登录先解绑当前浏览器，不影响其他设备。
 
@@ -182,20 +212,20 @@ Web Push由两条后台消费者领取数据库任务，失败指数退避，最
 
 所有接口需要当前登录会话；用户身份只取服务端会话，不能通过请求指定。复用 `code/message/data` 信封，业务 ID 均为字符串；日期为 `YYYY-MM-DD`，时间为 RFC3339。
 
-| 方法 | 路径 | 用途 |
-| --- | --- | --- |
-| GET | `/api/todos` | 当前用户的清单、待办（含步骤）、视图和优先级一致性快照 |
-| POST | `/api/todos/lists` | 创建清单，提交 `name` |
-| PATCH | `/api/todos/lists/:id` | 重命名清单，提交 `name` |
-| DELETE | `/api/todos/lists/:id` | 清单内待办移入收集箱，保留步骤 |
-| POST | `/api/todos/tasks` | 创建待办，至少提交 `title` |
-| PATCH | `/api/todos/tasks/:id` | 提交 `version` 和要修改的字段 |
-| DELETE | `/api/todos/tasks/:id` | 提交 `version`，同时删除步骤 |
-| POST | `/api/todos/import` | 导入旧 `{todoLists,todos}` 存档，按旧 ID 幂等处理 |
-| POST | `/api/todos/views` | 创建视图，提交名称、图标、规则、关键词和排序 |
-| PATCH | `/api/todos/views/:id` | 更新完整视图配置，同时提交 `version` |
-| DELETE | `/api/todos/views/:id` | 提交 `version`，至少保留一个活动视图 |
-| PUT | `/api/todos/priorities` | 按数组顺序批量保存四档名称、HEX 颜色及版本 |
+| 方法   | 路径                    | 用途                                                   |
+| ------ | ----------------------- | ------------------------------------------------------ |
+| GET    | `/api/todos`            | 当前用户的清单、待办（含步骤）、视图和优先级一致性快照 |
+| POST   | `/api/todos/lists`      | 创建清单，提交 `name`                                  |
+| PATCH  | `/api/todos/lists/:id`  | 重命名清单，提交 `name`                                |
+| DELETE | `/api/todos/lists/:id`  | 清单内待办移入收集箱，保留步骤                         |
+| POST   | `/api/todos/tasks`      | 创建待办，至少提交 `title`                             |
+| PATCH  | `/api/todos/tasks/:id`  | 提交 `version` 和要修改的字段                          |
+| DELETE | `/api/todos/tasks/:id`  | 提交 `version`，同时删除步骤                           |
+| POST   | `/api/todos/import`     | 导入旧 `{todoLists,todos}` 存档，按旧 ID 幂等处理      |
+| POST   | `/api/todos/views`      | 创建视图，提交名称、图标、规则、关键词和排序           |
+| PATCH  | `/api/todos/views/:id`  | 更新完整视图配置，同时提交 `version`                   |
+| DELETE | `/api/todos/views/:id`  | 提交 `version`，至少保留一个活动视图                   |
+| PUT    | `/api/todos/priorities` | 按数组顺序批量保存四档名称、HEX 颜色及版本             |
 
 收集箱是 `listId: null`，不创建默认清单记录。任务支持 `title`、`note`、`listId`、`done`、`priority`、`dueDate`、`plannedFor`、`tags`、`steps`；创建时可提供 `source: {kind:"mail",id,label}`，同一用户重复转同一来源返回原待办。PATCH 可用 null 清空日期或移入收集箱，省略字段保持原值。来源创建后不可修改。
 
@@ -210,7 +240,6 @@ Web Push由两条后台消费者领取数据库任务，失败指数退避，最
 优先级提交 `{priorities:[{value,name,color,version},...]}`，必须包含稳定 `value=1..4` 各一次，数组下标为排序。名称各不相同、最多 24 字；颜色为不透明 `#RRGGBB`，返回时规范为小写，读取兼容既有颜色标识。修改名称、颜色和顺序不重写任务与规则引用。旧版本或任意一行失败时整批回滚。
 
 首版按个人工作台规模批量读取完整快照；任务达到万级或响应超出预算时需升级服务端分页。两次增量迁移分别创建任务三表和配置两表，不修改旧表；回滚代码时保留已写入业务表。
-
 
 邮箱列表首次加载显示骨架，SSE、焦点恢复与轮询触发的后台刷新保留当前数据。共享 RecordsGrid 根据实际行高、表头、页脚与视口计算默认页容量（1–100），骨架行不参与测量；手动选择 10/15/30/50/100 后不再自适应，自动值也保留在选择器中。
 

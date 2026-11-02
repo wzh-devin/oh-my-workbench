@@ -1,3 +1,5 @@
+import { useEffect } from "react"
+import { loadMailPreferences } from "@/features/mail/store"
 import { useId, useState, type FormEvent } from "react"
 import { SaveIcon } from "lucide-react"
 import { toast } from "sonner"
@@ -82,6 +84,9 @@ function ProfileSettings() {
 function NotificationSettings() {
   const { data } = useWorkbench()
   const mail = useMail()
+  useEffect(() => {
+    if (mail.userId) void loadMailPreferences()
+  }, [mail.userId])
   const id = useId()
   const options = [
     { key: "todos", label: "待办到期" },
@@ -98,8 +103,7 @@ function NotificationSettings() {
               checked={data.preferences.notifications[key]}
               disabled={
                 key === "mail" &&
-                (mail.status !== "ready" ||
-                  mail.busyIds.includes("preferences"))
+                (!mail.userId || mail.busyIds.includes("preferences"))
               }
               onCheckedChange={(checked) => {
                 if (key === "mail") {

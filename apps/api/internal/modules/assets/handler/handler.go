@@ -79,14 +79,9 @@ func routeID(c *gin.Context) (int64, bool) {
 	return id, true
 }
 
-func (h *Handler) overview(c *gin.Context) {
-	value, err := h.service.Overview(c.Request.Context(), authhandler.CurrentUserID(c))
-	finish(c, value, err)
-}
-
 func (h *Handler) connections(c *gin.Context) {
-	value, err := h.service.Overview(c.Request.Context(), authhandler.CurrentUserID(c))
-	finish(c, value.Connections, err)
+	value, err := h.service.Connections(c.Request.Context(), authhandler.CurrentUserID(c))
+	finish(c, value, err)
 }
 
 func (h *Handler) saveConnection(c *gin.Context) {
@@ -94,13 +89,9 @@ func (h *Handler) saveConnection(c *gin.Context) {
 	if !read(c, &input) {
 		return
 	}
-	var id int64
-	if c.Param("id") != "" {
-		var ok bool
-		id, ok = routeID(c)
-		if !ok {
-			return
-		}
+	id, ok := mutationID(c, input.ID)
+	if !ok {
+		return
 	}
 	value, err := h.service.SaveConnection(c.Request.Context(), authhandler.CurrentUserID(c), id, input)
 	finish(c, value, err)
@@ -115,11 +106,17 @@ func (h *Handler) testConnection(c *gin.Context) {
 	finish(c, value, err)
 }
 
-func (h *Handler) query(c *gin.Context) {
-	var input assetdomain.QueryInput
+// page keeps directory, view and nested filters in one bounded JSON request.
+func (h *Handler) page(c *gin.Context) {
+	input := assetdomain.QueryInput{Page: 1, PageSize: 50}
 	if !read(c, &input) {
 		return
 	}
+	if input.Page < 1 || input.Page > 1000000 {
+		fail(c, assetdomain.ErrInvalid)
+		return
+	}
+	input.Page--
 	value, err := h.service.Query(c.Request.Context(), authhandler.CurrentUserID(c), input)
 	finish(c, value, err)
 }
@@ -129,13 +126,9 @@ func (h *Handler) saveEntry(c *gin.Context) {
 	if !read(c, &input) {
 		return
 	}
-	var id int64
-	if c.Param("id") != "" {
-		var ok bool
-		id, ok = routeID(c)
-		if !ok {
-			return
-		}
+	id, ok := mutationID(c, input.ID)
+	if !ok {
+		return
 	}
 	value, err := h.service.SaveEntry(c.Request.Context(), authhandler.CurrentUserID(c), id, input)
 	finish(c, value, err)
@@ -161,6 +154,12 @@ func (h *Handler) batch(c *gin.Context) {
 	if !read(c, &input) {
 		return
 	}
+	action := strings.TrimSuffix(c.FullPath()[strings.LastIndex(c.FullPath(), "/")+1:], "Batch")
+	if input.Action != "" && input.Action != action {
+		fail(c, assetdomain.ErrInvalid)
+		return
+	}
+	input.Action = action
 	value, err := h.service.Batch(c.Request.Context(), authhandler.CurrentUserID(c), input)
 	finish(c, value, err)
 }
@@ -175,30 +174,22 @@ func (h *Handler) saveView(c *gin.Context) {
 	if !read(c, &input) {
 		return
 	}
-	var id int64
-	if c.Param("id") != "" {
-		var ok bool
-		id, ok = routeID(c)
-		if !ok {
-			return
-		}
+	id, ok := mutationID(c, input.ID)
+	if !ok {
+		return
 	}
 	value, err := h.service.SaveView(c.Request.Context(), authhandler.CurrentUserID(c), id, input)
 	finish(c, value, err)
 }
 
-func (h *Handler) deleteView(c *gin.Context) {
-	id, ok := routeID(c)
-	if !ok {
-		return
-	}
+func (h *Handler) deleteViews(c *gin.Context) {
 	var input struct {
-		Version int `json:"version"`
+		Items []assetdomain.BatchItem `json:"items"`
 	}
 	if !read(c, &input) {
 		return
 	}
-	finish(c, nil, h.service.DeleteView(c.Request.Context(), authhandler.CurrentUserID(c), id, input.Version))
+	finish(c, nil, h.service.DeleteViews(c.Request.Context(), authhandler.CurrentUserID(c), input.Items))
 }
 
 func (h *Handler) initUpload(c *gin.Context) {
@@ -293,6 +284,16 @@ func (h *Handler) preview(c *gin.Context) {
 }
 
 // content 只处理 HTTP Range 和响应头，权限与格式边界由 Service 统一检查。
+func (h *Handler) access(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	id, ok := routeID(c)
+	if !ok {
+		return
+	}
+	value, err := h.service.AccessContent(c.Request.Context(), authhandler.CurrentUserID(c), id, c.Query("preview") == "1", c.Query("download") == "1")
+	finish(c, value, err)
+}
+
 func (h *Handler) content(c *gin.Context) {
 	id, ok := routeID(c)
 	if !ok {
@@ -300,7 +301,7 @@ func (h *Handler) content(c *gin.Context) {
 	}
 	download := c.Query("download") == "1"
 	content, err := h.service.OpenContent(c.Request.Context(), authhandler.CurrentUserID(c), id, c.Query("preview") == "1", download)
-	h.serveContent(c, content, download, false, err)
+	h.serveContent(c, content, download, err)
 }
 
 func (h *Handler) retryThumbnail(c *gin.Context) {
@@ -318,11 +319,11 @@ func (h *Handler) thumbnail(c *gin.Context) {
 		return
 	}
 	content, err := h.service.OpenRendition(c.Request.Context(), authhandler.CurrentUserID(c), id, assetdomain.ThumbnailVersion, false)
-	h.serveContent(c, content, false, true, err)
+	h.serveContent(c, content, false, err)
 }
 
 // 缓存协商发生在Service完成权限检查后，撤销访问后不能靠304继续读取。
-func (h *Handler) serveContent(c *gin.Context, content assetservice.Content, download, thumbnail bool, err error) {
+func (h *Handler) serveContent(c *gin.Context, content assetservice.Content, download bool, err error) {
 	if err != nil {
 		c.Header("Cache-Control", "no-store")
 		fail(c, err)
@@ -344,10 +345,28 @@ func (h *Handler) serveContent(c *gin.Context, content assetservice.Content, dow
 	c.Header("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": content.Name}))
 	c.Header("Accept-Ranges", "bytes")
 	c.Header("ETag", `"`+content.ETag+`"`)
-	if thumbnail {
+	if download {
+		c.Header("Cache-Control", "no-store")
+	} else {
 		c.Header("Cache-Control", "private, no-cache")
 	}
 	http.ServeContent(c.Writer, c.Request, content.Name, content.ModifiedAt, content.Reader)
 }
 
 func fmtRange(size int64) string { return "bytes */" + strconv.FormatInt(size, 10) }
+
+func mutationID(c *gin.Context, value string) (int64, bool) {
+	if strings.HasSuffix(c.FullPath(), "/save") {
+		if value != "" {
+			fail(c, assetdomain.ErrInvalid)
+			return 0, false
+		}
+		return 0, true
+	}
+	id, e := assetdomain.ParseID(value)
+	if e != nil {
+		fail(c, e)
+		return 0, false
+	}
+	return id, true
+}

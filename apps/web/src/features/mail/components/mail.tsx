@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from "react"
+import { activateResource } from "@/lib/requests/invalidation"
+import { useEffect, useCallback, useMemo, useState } from "react"
 import { Link, useSearchParams } from "react-router"
 import { toast } from "sonner"
 import {
@@ -53,6 +54,11 @@ import { MailProviderIcon } from "./mail-provider-icon"
 /** Query one server page; shared totals and account navigation use the complete overview. */
 export function Mail() {
   const mail = useMail()
+  useEffect(() => {
+    const release = activateResource("mail")
+    if (mail.userId) void loadMail()
+    return release
+  }, [mail.userId])
   const accounts = mail.overview.accounts
   const [params, setParams] = useSearchParams()
   const accountId = params.get("account") ?? "all"
@@ -288,6 +294,7 @@ export function Mail() {
               : accountId
         }
         onItemChange={(id) => {
+          retry()
           resetPage()
           setParams(
             id === "accounts"

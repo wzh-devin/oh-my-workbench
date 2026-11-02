@@ -27,6 +27,7 @@ export const attachmentSchema = z.object({
   content: z.string().default(""),
 })
 export const messageSchema = z.object({
+  todoId: z.string().nullable().optional(),
   id: z.string(),
   accountId: z.string(),
   sender: z.string(),

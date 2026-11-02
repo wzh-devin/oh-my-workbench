@@ -94,13 +94,15 @@ export function MailDetail({
   const account = mail.overview.accounts.find(
     (item) => item.id === detail?.accountId
   )
-  const linkedTask = todos.data.todos.find(
-    (todo) => todo.source?.kind === "mail" && todo.source.id === id
-  )
+  const linkedTask =
+    detail?.todoId ??
+    todos.data.todos.find(
+      (todo) => todo.source?.kind === "mail" && todo.source.id === id
+    )?.id
   const convertToTask = async () => {
     if (!detail) return
     if (linkedTask) {
-      navigate(`/todos?task=${encodeURIComponent(linkedTask.id)}`)
+      navigate(`/todos?task=${encodeURIComponent(linkedTask)}`)
       return
     }
     const title = detail.subject.trim().slice(0, 200) || "邮件待办"

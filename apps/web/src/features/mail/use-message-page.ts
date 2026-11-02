@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react"
+import { onPageResume } from "@/lib/requests/page-resume"
+import { onListRefresh } from "@/lib/requests/invalidation"
 import { toast } from "sonner"
 import { mailApi, type MessageQuery } from "./api"
 import type { Message } from "./model"
@@ -18,6 +20,8 @@ export function useMessagePage(
   })
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading")
   const [retry, setRetry] = useState(0)
+  useEffect(() => onListRefresh("mail", () => setRetry((n) => n + 1)), [])
+  useEffect(() => onPageResume(() => setRetry((n) => n + 1)), [])
   const key = JSON.stringify(scope)
   const loadedKey = useRef<string | null>(null)
   const anchors = useRef({ scope: "", pages: new Map<number, string>() })
@@ -31,7 +35,7 @@ export function useMessagePage(
       if (anchors.current.scope !== scopeKey)
         anchors.current = { scope: scopeKey, pages: new Map() }
       const afterId = anchors.current.pages.get(input.page)
-      void mailApi.query({ ...input, afterId }, controller.signal).then(
+      void mailApi.page({ ...input, afterId }, controller.signal).then(
         (data) => {
           if (controller.signal.aborted) return
           loadedKey.current = `${identity}:${key}`

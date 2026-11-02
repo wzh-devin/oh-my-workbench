@@ -3,7 +3,6 @@ import {
   mailAccountSchema,
   messageSchema,
   notificationSchema,
-  overviewSchema,
   type AccountInput,
 } from "./model"
 import type { RuleDocument } from "@/lib/rules/model"
@@ -85,6 +84,15 @@ export type MessageQuery = {
   archived?: boolean
 }
 export const mailApi = {
+  accounts: (signal: AbortSignal) =>
+    mailRequest("/accounts", "GET", z.array(mailAccountSchema), signal),
+  readPreferences: (signal: AbortSignal) =>
+    mailRequest(
+      "/preferences",
+      "GET",
+      z.object({ notificationsEnabled: z.boolean() }),
+      signal
+    ),
   bulk: (
     body: MessageQuery & { action: "read" | "archive-read" },
     signal: AbortSignal
@@ -94,13 +102,11 @@ export const mailApi = {
       "POST",
       z.object({ affected: z.number().int().nonnegative() }),
       signal,
-      body
+      { ...body, pageNum: body.page, page: undefined }
     ),
-  overview: (signal: AbortSignal) =>
-    mailRequest("/overview", "GET", overviewSchema, signal),
-  query: (body: MessageQuery, signal: AbortSignal) =>
+  page: (body: MessageQuery, signal: AbortSignal) =>
     mailRequest(
-      "/messages/query",
+      "/messages/page",
       "POST",
       z.object({
         messages: z.array(messageSchema),
@@ -108,7 +114,7 @@ export const mailApi = {
         nextAfter: z.string().optional(),
       }),
       signal,
-      body
+      { ...body, pageNum: body.page, page: undefined }
     ),
   message: (id: string, signal: AbortSignal) =>
     mailRequest(`/messages/${id}`, "GET", messageSchema, signal),
@@ -121,14 +127,18 @@ export const mailApi = {
       archived?: boolean
     },
     signal: AbortSignal
-  ) => mailRequest(`/messages/${id}`, "PATCH", messageSchema, signal, body),
+  ) =>
+    mailRequest("/messages/update", "POST", messageSchema, signal, {
+      ...body,
+      id,
+    }),
   account: (body: AccountInput, id: string | undefined, signal: AbortSignal) =>
     mailRequest(
-      id ? `/accounts/${id}` : "/accounts",
-      id ? "PATCH" : "POST",
+      id ? "/accounts/update" : "/accounts/save",
+      "POST",
       mailAccountSchema,
       signal,
-      body
+      { ...body, ...(id ? { id } : {}) }
     ),
   sync: (id: string, signal: AbortSignal) =>
     mailRequest(

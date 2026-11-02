@@ -20,7 +20,13 @@ GlobalWorkerOptions.workerSrc = new URL(
 ).toString()
 
 /** 每次只渲染一页，文本层支持选择；切换与关闭取消解析和绘制。 */
-export default function PdfPreview({ url }: { url: string }) {
+export default function PdfPreview({
+  url,
+  onRetry,
+}: {
+  url: string
+  onRetry?: () => void
+}) {
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null),
     [page, setPage] = useState(1),
     [zoom, setZoom] = useState<number | "width" | null>("width")
@@ -57,7 +63,8 @@ export default function PdfPreview({ url }: { url: string }) {
   useEffect(() => {
     const task = getDocument({
       url,
-      withCredentials: true,
+      withCredentials:
+        new URL(url, window.location.href).origin === window.location.origin,
       disableAutoFetch: true,
       disableStream: true,
       enableXfa: false,
@@ -215,7 +222,8 @@ export default function PdfPreview({ url }: { url: string }) {
           size="sm"
           onClick={() => {
             setFailed(false)
-            setAttempt((value) => value + 1)
+            if (onRetry) onRetry()
+            else setAttempt((value) => value + 1)
           }}
         >
           重试

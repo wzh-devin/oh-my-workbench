@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dialog"
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Choice } from "./components"
 import { storageInputSchema, type StorageConnection } from "./model"
 import {
   saveAssetConnection,
@@ -98,6 +99,8 @@ export function ConnectionDialog({
   const [form, setForm] = useState({
     name: source?.name ?? "",
     endpoint: source?.endpoint ?? "",
+    publicEndpoint: source?.publicEndpoint ?? "",
+    addressingStyle: source?.addressingStyle ?? "path",
     bucket: source?.bucket ?? "",
     region: source?.region ?? "us-east-1",
     prefix: source?.prefix ?? "workbench",
@@ -162,6 +165,11 @@ export function ConnectionDialog({
             [
               ["name", "显示名称", "MinIO 工作资料"],
               ["endpoint", "S3 Endpoint", "http://localhost:9000"],
+              [
+                "publicEndpoint",
+                "公开访问端点（可选）",
+                "留空由工作台传输，如 https://files.example.com",
+              ],
               ["bucket", "Bucket", "workbench"],
               ["region", "Region", "us-east-1"],
               ["prefix", "管理前缀", "workbench"],
@@ -184,7 +192,7 @@ export function ConnectionDialog({
                 type={
                   key === "secretKey"
                     ? "password"
-                    : key === "endpoint"
+                    : key === "endpoint" || key === "publicEndpoint"
                       ? "url"
                       : "text"
                 }
@@ -207,6 +215,24 @@ export function ConnectionDialog({
               />
             </Field>
           ))}
+          <Field>
+            <FieldLabel>寻址方式</FieldLabel>
+            <Choice
+              value={form.addressingStyle}
+              onChange={(value) =>
+                setForm((current) => ({
+                  ...current,
+                  addressingStyle: value as "path" | "virtual",
+                }))
+              }
+              label="寻址方式"
+              disabled={busy}
+              options={[
+                { value: "path", label: "路径（endpoint/bucket）" },
+                { value: "virtual", label: "虚拟主机（bucket.endpoint）" },
+              ]}
+            />
+          </Field>
           <Field>
             <div className="flex items-center gap-2">
               <Checkbox

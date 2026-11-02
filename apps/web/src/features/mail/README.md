@@ -38,7 +38,6 @@ flowchart LR
 - [Nextcloud Mail：HTMLPurifier、CSS 与图片资源处理](https://github.com/nextcloud/mail/blob/77a85a7f1f9f28adfb04b98c28c7ee5cf6ddba55/lib/Service/Html.php)。参考内容清理与资源策略分离；当前采用浏览器 CSP，不增加服务端图片代理。
 - [DOMPurify 官方使用与安全边界](https://github.com/cure53/DOMPurify/tree/3.4.17)。使用默认 HTML 安全规则，保留完整文档用于独立 iframe。
 
-
 ## 详情与账号界面约定
 
 - 邮件详情的 `Sheet` 始终挂载，由 URL 的 `message` 控制打开；关闭后保留内容直至内置退出动画完成。切换邮件前清空展示状态，取消过期读取及下载；旧邮件的星标/恢复归档响应不得覆盖新邮件。
@@ -46,7 +45,6 @@ flowchart LR
 - 侧栏、账号服务列、详情来源和邮箱选择统一使用 `MailProviderIcon`。Gmail 复用已安装 SVG；QQ 使用[官网静态图标](https://res.wx.qq.com/t/webmail/webmail/res/images/qqmail_favicon_96h.8d124a7.png)，随应用本地提供，不运行时请求厂商。
 - `RecordsGrid` 文字列默认左对齐，图标/操作列显式 `meta.align = "center"`；列宽和 `fillWidth` 不再决定对齐方式。表头与单元格由共享组件同时设置。
 - 凭证标签右侧为新窗口官网链接。QQ 打开 [QQ 邮箱](https://mail.qq.com/)，提示登录后在“设置 → 账号与安全 → 安全设置”开启 IMAP 并生成授权码；Gmail 打开 [Google 应用专用密码](https://myaccount.google.com/apppasswords)，提示先开启两步验证，要求见 [Google 官方帮助](https://support.google.com/accounts/answer/185833?hl=zh-Hans)。不把凭证或邮箱地址放进外部 URL。
-
 
 ## 附件下载故障定位
 

@@ -33,6 +33,7 @@ type Priority struct {
 func (Priority) TableName() string { return "omw_todo_priority" }
 
 type ViewRequest struct {
+	ID          string          `json:"id,omitempty"`
 	Version     int             `json:"version"`
 	Name        string          `json:"name"`
 	Icon        string          `json:"icon"`

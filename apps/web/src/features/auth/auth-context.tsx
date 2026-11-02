@@ -9,6 +9,7 @@ import {
 } from "react"
 
 import { authApi, AuthError, type AuthUser, type Credentials } from "./auth-api"
+import { onPageResume } from "@/lib/requests/page-resume"
 
 type AuthState = {
   status: "loading" | "anonymous" | "authenticated" | "error"
@@ -45,43 +46,52 @@ export function AuthProvider({
   })
   const revision = useRef(0)
   const pending = useRef<AbortController | null>(null)
+  const reading = useRef<Promise<void> | null>(null)
   const refresh = useCallback(() => {
+    if (reading.current) return reading.current
     const current = ++revision.current
     pending.current?.abort()
     const controller = new AbortController()
     pending.current = controller
-    return authApi.me(controller.signal).then(
-      (session) => {
-        if (current === revision.current)
-          setState({ ...session, status: "authenticated", error: null })
-      },
-      (error: unknown) => {
-        if (controller.signal.aborted || current !== revision.current) return
-        setState((previous) =>
-          error instanceof AuthError && error.status === 401
-            ? anonymous
-            : {
-                ...previous,
-                status: "error",
-                error:
-                  error instanceof Error
-                    ? error.message
-                    : "读取登录状态失败，请重试",
-              }
-        )
-      }
-    )
+    const request = authApi
+      .me(controller.signal)
+      .then(
+        (session) => {
+          if (current === revision.current)
+            setState({ ...session, status: "authenticated", error: null })
+        },
+        (error: unknown) => {
+          if (controller.signal.aborted || current !== revision.current) return
+          setState((previous) =>
+            error instanceof AuthError && error.status === 401
+              ? anonymous
+              : {
+                  ...previous,
+                  status: "error",
+                  error:
+                    error instanceof Error
+                      ? error.message
+                      : "读取登录状态失败，请重试",
+                }
+          )
+        }
+      )
+      .finally(() => {
+        if (reading.current === request) reading.current = null
+      })
+    reading.current = request
+    return request
   }, [])
 
   useEffect(() => {
     void refresh()
-    const onFocus = () => {
+    const stop = onPageResume(() => {
       void refresh()
-    }
-    window.addEventListener("focus", onFocus)
+    })
     return () => {
       pending.current?.abort()
-      window.removeEventListener("focus", onFocus)
+      reading.current = null
+      stop()
     }
   }, [refresh])
 
@@ -99,10 +109,12 @@ export function AuthProvider({
 
   /** 登录成功后重新读取 Cookie 会话，确认浏览器确实接受了会话。 */
   const login = async (values: Credentials) => {
+    reading.current = null
     ++revision.current
     pending.current?.abort()
     await authApi.login(values)
     const session = await authApi.me()
+    reading.current = null
     ++revision.current
     pending.current?.abort()
     setState({ ...session, status: "authenticated", error: null })
@@ -110,10 +122,12 @@ export function AuthProvider({
 
   /** 服务端撤销成功才清除当前身份，失败保留页面供重试。 */
   const logout = async () => {
+    reading.current = null
     ++revision.current
     pending.current?.abort()
     await onBeforeLogout?.()
     await authApi.logout()
+    reading.current = null
     ++revision.current
     pending.current?.abort()
     setState(anonymous)

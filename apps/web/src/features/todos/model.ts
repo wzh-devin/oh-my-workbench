@@ -91,3 +91,19 @@ export type TodoChanges = Partial<
     | "source"
   >
 >
+
+export const taskPageSchema = z.object({
+  records: z.array(remoteTodoSchema),
+  total: z.number().int().nonnegative(),
+  pageNum: z.number().int(),
+  pageSize: z.number().int(),
+})
+export type TaskQuery = {
+  pageNum: number
+  pageSize: number
+  viewId: string
+  listId: string
+  search: string
+  sort: string
+  filterQuery?: import("@/lib/rules/model").RuleDocument
+}

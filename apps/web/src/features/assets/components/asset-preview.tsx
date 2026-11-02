@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react"
+import { lazy, Suspense, useEffect, useRef, useState } from "react"
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils"
 import { formatSize, type Asset } from "@/features/workbench/model"
 import { readAsset } from "@/features/workbench/store"
 import { recordOpened } from "../store"
-import { assetApi, assetContentURL } from "../api"
+import { assetApi, getAssetContentURL } from "../api"
 import { toast } from "sonner"
 import { TextPreview } from "./text-preview"
 import { ImagePreview } from "./image-preview"
@@ -70,6 +70,7 @@ export function AssetPreview({
   onDownload: (asset: Asset) => void
 }) {
   const [attempt, setAttempt] = useState(0)
+  const refresh = useRef<string | null>(null)
   const [preview, setPreview] = useState<Preview>({
     id: asset.id,
     status: "loading",
@@ -81,6 +82,8 @@ export function AssetPreview({
     preview.id === id ? preview : { status: "loading" as const }
   const index = files.findIndex((file) => file.id === asset.id)
   useEffect(() => {
+    const renew = refresh.current === id
+    refresh.current = null
     let active = true
     let url: string | undefined
     const controller = new AbortController()
@@ -88,8 +91,7 @@ export function AssetPreview({
       try {
         let text = "",
           truncated = false
-        if (origin === "remote") {
-          url = assetContentURL(id)
+        if (origin === "remote" && kind !== "unsupported") {
           if (kind === "office") {
             let result = await assetApi.preview(id, true, controller.signal)
             while (
@@ -113,11 +115,18 @@ export function AssetPreview({
             }
             if (result.status !== "ready")
               throw new Error(result.error || "预览转换失败")
-            url = assetContentURL(id, "preview")
-          } else if (kind === "text") {
+          }
+          url = await getAssetContentURL(
+            id,
+            kind === "office" ? "preview" : undefined,
+            controller.signal,
+            renew
+          )
+          if (kind === "text") {
             const response = await fetch(url, {
               signal: controller.signal,
               credentials: "same-origin",
+              referrerPolicy: "no-referrer",
               headers: { Range: "bytes=0-524287" },
             })
             if (!response.ok) throw new Error("读取文件内容失败")
@@ -179,6 +188,11 @@ export function AssetPreview({
       if (url?.startsWith("blob:")) URL.revokeObjectURL(url)
     }
   }, [id, name, origin, type, kind, attempt, asset.size])
+  const retryPreview = () => {
+    refresh.current = id
+    setPreview({ id, status: "loading" })
+    setAttempt((value) => value + 1)
+  }
   const mediaError = () => {
     const message = "无法预览此文件，请重试或下载"
     setPreview({ id, status: "error", message })
@@ -264,10 +278,7 @@ export function AssetPreview({
                 type="button"
                 size="sm"
                 variant="outline"
-                onClick={() => {
-                  setPreview({ id, status: "loading" })
-                  setAttempt((value) => value + 1)
-                }}
+                onClick={retryPreview}
               >
                 重试预览
               </Button>
@@ -285,7 +296,11 @@ export function AssetPreview({
               )}
               {(kind === "pdf" || kind === "office") && (
                 <Suspense fallback={<Skeleton className="h-64 w-full" />}>
-                  <PdfPreview key={id} url={currentPreview.url} />
+                  <PdfPreview
+                    key={id}
+                    url={currentPreview.url}
+                    onRetry={retryPreview}
+                  />
                 </Suspense>
               )}
               {kind === "video" && (

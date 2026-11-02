@@ -37,21 +37,25 @@ const accountSchema = namedRecord.extend({
   lastSync: timestamp.nullable(),
   error: z.string().nullable(),
 })
+const storageEndpointSchema = z.url().refine((value) => {
+  const url = new URL(value)
+  return (
+    ["http:", "https:"].includes(url.protocol) &&
+    !url.username &&
+    !url.password &&
+    !url.search &&
+    !url.hash &&
+    (url.pathname === "" || url.pathname === "/")
+  )
+}, "请输入不含路径、凭证或查询参数的 HTTP(S) 服务地址")
 export const storageSchema = namedRecord.extend({
   version: z.number().int().nonnegative().optional(),
   region: z.string().optional(),
   prefix: z.string().optional(),
   enabled: z.boolean().optional(),
-  endpoint: z.url().refine((value) => {
-    const url = new URL(value)
-    return (
-      ["http:", "https:"].includes(url.protocol) &&
-      !url.username &&
-      !url.password &&
-      !url.search &&
-      !url.hash
-    )
-  }, "请输入不含凭证或查询参数的 HTTP(S) 服务地址"),
+  endpoint: storageEndpointSchema,
+  publicEndpoint: z.union([z.literal(""), storageEndpointSchema]).optional(),
+  addressingStyle: z.enum(["path", "virtual"]).optional(),
   bucket: z
     .string()
     .min(3)
@@ -88,6 +92,8 @@ export const accountInputSchema = accountSchema.pick({
 export const storageInputSchema = storageSchema.pick({
   name: true,
   endpoint: true,
+  publicEndpoint: true,
+  addressingStyle: true,
   bucket: true,
 })
 export const workbenchSchema = z
@@ -171,6 +177,14 @@ export const workbenchSchema = z
   }, "文件目录无效或包含循环关联")
 
 export type Workbench = z.infer<typeof workbenchSchema> & {
+  todoCounts?: Record<string, number>
+  todoSummary?: {
+    total: number
+    pending: number
+    listCount: number
+    daily: Record<string, number>
+  }
+} & {
   mailSummary?: MailOverview
   mailNotifications?: MailNotification[]
   assetSummary?: AssetOverview

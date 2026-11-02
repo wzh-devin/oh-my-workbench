@@ -76,12 +76,12 @@ cp -n .env.example .env.local
 
 根据本机服务填写配置，完整选项见 [.env.example](.env.example)：
 
-| 变量                            | 用途                                                        |
-| ------------------------------- | ----------------------------------------------------------- |
-| `DATABASE_URL`                  | PostgreSQL 连接串，数据库和账号需事先创建                   |
-| `REDIS_ADDR` / `REDIS_PASSWORD` | Redis 地址及密码，无密码时留空                              |
+| 变量                            | 用途                                                       |
+| ------------------------------- | ---------------------------------------------------------- |
+| `DATABASE_URL`                  | PostgreSQL 连接串，数据库和账号需事先创建                  |
+| `REDIS_ADDR` / `REDIS_PASSWORD` | Redis 地址及密码，无密码时留空                             |
 | `WORKER_ID`                     | 可选，默认 `1`；多实例部署时各实例使用不同的 `0–1023` 编号 |
-| `COOKIE_SECURE`                 | 本地 HTTP 使用 `false`，生产 HTTPS 使用 `true`              |
+| `COOKIE_SECURE`                 | 本地 HTTP 使用 `false`，生产 HTTPS 使用 `true`             |
 
 API 固定监听 `:11990`；应用镜像通过 Nginx 对外提供 `8080`，可用 `18080:8080` 调整宿主机端口。
 
@@ -114,11 +114,15 @@ API 启动时自动执行 Goose 数据库迁移，无需单独安装迁移 CLI�
 
 在资产页面添加 S3 / MinIO 连接，填写 Endpoint、已有 Bucket、Region、访问凭证和管理前缀。工作台不会自动创建 Bucket，连接账号需具备对应前缀的对象读写与分片上传权限。
 
+填写连接的“公开访问端点”后，API 鉴权并签发15分钟链接，由浏览器直接从私有存储预览和下载；原图在链接有效期内复用浏览器缓存。留空继续由工作台转发。支持路径和虚拟主机寻址，其他存储按其 S3 兼容接口配置；跨域 PDF/文本预览需配置 CORS，详见[签名分发配置](apps/api/internal/modules/assets/README.md#私有文件签名分发)。
+
 应用镜像已内置 Office 预览与缩略图服务，默认地址无需修改。本地开发或手动部署可使用[独立预览 Compose 配置](apps/api/deploy/gotenberg/compose.yaml)，并在“设置 → 通用”填写 API 可访问的转换服务地址；具体方法见[资产服务配置](apps/api/internal/modules/assets/README.md#连接与运行)。未部署转换服务时，文件仍可上传和下载。
 
 ### 网络代理
 
 在「设置 → 网络代理」中分别配置 QQ 邮箱、Gmail、系统通知、对象存储和文件转换的 SOCKS5 代理，保存后无需重启 API。本机与私网地址保持直连。
+
+业务列表按需加载，Todo、邮件、资产的复杂分页统一使用 `POST .../page`，筛选树放在 JSON 请求体；配置、详情和统计分别读取。接口契约与请求时机见 [API 开发文档](apps/api/README.md#业务接口与请求时机)。
 
 ## 开发指南
 
@@ -248,11 +252,11 @@ Redis 有密码时另传 `REDIS_PASSWORD`。单实例默认 `WORKER_ID=1`，多�
 
 后端使用 Go 标准库 [log/slog](https://pkg.go.dev/log/slog)，通过 [lumberjack](https://github.com/natefinch/lumberjack) 轮转文件。完整日志以一行一条 JSON 写入文件，WARN/ERROR 同时输出到标准输出；网关不再重复输出 API 原始访问日志。本地位于 `apps/api/logs/`，镜像内位于 `/app/apps/api/logs/`。
 
-| 文件 | 内容 |
-|---|---|
-| `api.log` | 请求、响应、SQL、业务错误、启动与关闭 |
-| `renderer.log` | 缩略图服务启动和错误 |
-| `api-crash.log` / `renderer-crash.log` | Go 运行时未处理崩溃的原始堆栈 |
+| 文件                                   | 内容                                  |
+| -------------------------------------- | ------------------------------------- |
+| `api.log`                              | 请求、响应、SQL、业务错误、启动与关闭 |
+| `renderer.log`                         | 缩略图服务启动和错误                  |
+| `api-crash.log` / `renderer-crash.log` | Go 运行时未处理崩溃的原始堆栈         |
 
 请求记录方法、路径、查询参数、客户端 IP、请求时间；响应记录状态码、结束时间、耗时、请求/响应体与字节数。响应头 `X-Request-ID` 对应日志中的 `request_id`，同一请求的 SQL 和错误也使用该编号。SQL 保留语句模板、参数、执行耗时及行数；慢于 200ms 标记为 WARN。内部错误记录原因、类型和当前调用栈，接口仍返回原有业务响应。
 
@@ -324,14 +328,14 @@ Mihomo 接入 `infra` 且允许局域网连接后，应用的代理设置可填�
 
 在仓库 **Settings → Environments → production** 中配置以下 Secrets（也可使用仓库级 Actions Secrets）：
 
-| Secret | 内容 |
-|---|---|
-| `NETBIRD_SETUP_KEY` | CI 专用 NetBird Setup Key，使用 Reusable 类型并开启 Ephemeral Peers |
-| `DEPLOY_HOST` | 服务器的 NetBird IP 或可通过该网络访问的域名，例如 `100.105.58.148` |
-| `DEPLOY_USER` | SSH 部署账号 |
-| `DEPLOY_PASSWORD` | SSH 账号密码；与 `DEPLOY_SSH_KEY` 二选一 |
-| `DEPLOY_SSH_KEY` | 该账号的无口令 SSH 私钥，对应公钥预先加入服务器 authorized_keys；与 `DEPLOY_PASSWORD` 二选一 |
-| `DEPLOY_KNOWN_HOSTS` | 经可信渠道核对的服务器 known_hosts 完整记录；非 22 端口使用 `[host]:port` 记录 |
+| Secret               | 内容                                                                                         |
+| -------------------- | -------------------------------------------------------------------------------------------- |
+| `NETBIRD_SETUP_KEY`  | CI 专用 NetBird Setup Key，使用 Reusable 类型并开启 Ephemeral Peers                          |
+| `DEPLOY_HOST`        | 服务器的 NetBird IP 或可通过该网络访问的域名，例如 `100.105.58.148`                          |
+| `DEPLOY_USER`        | SSH 部署账号                                                                                 |
+| `DEPLOY_PASSWORD`    | SSH 账号密码；与 `DEPLOY_SSH_KEY` 二选一                                                     |
+| `DEPLOY_SSH_KEY`     | 该账号的无口令 SSH 私钥，对应公钥预先加入服务器 authorized_keys；与 `DEPLOY_PASSWORD` 二选一 |
+| `DEPLOY_KNOWN_HOSTS` | 经可信渠道核对的服务器 known_hosts 完整记录；非 22 端口使用 `[host]:port` 记录               |
 
 使用用户名和密码时，配置 `DEPLOY_USER`、`DEPLOY_PASSWORD` 即可选择密码认证，服务器需允许 SSH 密码登录。同时配置密码和私钥时优先使用私钥。
 

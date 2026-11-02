@@ -61,7 +61,7 @@ export const buildResourceGraph = (
       resources: data.todoLists.map((list) => ({
         title: list.name,
         description: "",
-        detail: `${data.todos.filter((record) => record.listId === list.id && !record.done).length} 项待完成 · ${data.todos.filter((record) => record.listId === list.id && record.done).length} 项已完成`,
+        detail: `${data.todoCounts?.[`list:${list.id}`] ?? data.todos.filter((record) => record.listId === list.id && !record.done).length} 项待完成 · ${data.todoCounts ? (data.todoCounts[`listTotal:${list.id}`] ?? 0) - (data.todoCounts[`list:${list.id}`] ?? 0) : data.todos.filter((record) => record.listId === list.id && record.done).length} 项已完成`,
         kind: "todo",
         href: `/todos?list=${encodeURIComponent(list.id)}`,
       })),

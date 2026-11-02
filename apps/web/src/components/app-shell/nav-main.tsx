@@ -1,5 +1,6 @@
 "use client"
 
+import { requestListRefresh } from "@/lib/requests/invalidation"
 import { Link } from "react-router"
 
 import {
@@ -42,6 +43,7 @@ export function NavMain({ items, activeNav }: NavMainProps) {
                 // navigation, or with a panel its page fills, keeps the
                 // drawer open on that content.
                 onClick={() => {
+                  requestListRefresh(item.id)
                   const panel = INNER_NAV[item.id]
 
                   if (

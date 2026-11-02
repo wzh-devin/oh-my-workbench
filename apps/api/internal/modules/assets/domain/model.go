@@ -24,6 +24,8 @@ type Connection struct {
 	Base
 	Name                 string     `json:"name"`
 	Endpoint             string     `json:"endpoint"`
+	PublicEndpoint       string     `json:"publicEndpoint"`
+	AddressingStyle      string     `json:"addressingStyle"`
 	Region               string     `json:"region"`
 	Bucket               string     `json:"bucket"`
 	Prefix               string     `json:"prefix"`

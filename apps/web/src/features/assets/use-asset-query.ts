@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { onListRefresh } from "@/lib/requests/invalidation"
+import { onPageResume } from "@/lib/requests/page-resume"
 import { toast } from "sonner"
 import { assetApi, type AssetQuery } from "./api"
 import type { RemoteEntry } from "./model"
@@ -39,6 +41,8 @@ export const useAssetQuery = (input: AssetQuery, enabled = true) => {
     revision: -1,
     owner: null,
   })
+  useEffect(() => onPageResume(() => setAttempt((n) => n + 1)), [])
+  useEffect(() => onListRefresh("assets", () => setAttempt((n) => n + 1)), [])
   const more = useRef<() => void>(() => {})
   const loadMore = useCallback(() => more.current(), [])
   useEffect(() => {
@@ -98,7 +102,7 @@ export const useAssetQuery = (input: AssetQuery, enabled = true) => {
           for (let index = 0; index < pages.length; index++) {
             if (!hasPending(pages[index])) continue
             const current = pages[index],
-              value = await assetApi.query(
+              value = await assetApi.page(
                 { ...requested, cursor: current.cursor, cursorMode: true },
                 controller.signal
               )
@@ -115,7 +119,7 @@ export const useAssetQuery = (input: AssetQuery, enabled = true) => {
           }
         } else {
           const cursor = mode === "more" ? last!.nextCursor : ""
-          const value = await assetApi.query(
+          const value = await assetApi.page(
             { ...requested, cursor, cursorMode: true },
             controller.signal
           )

@@ -154,25 +154,34 @@ func (r *Repository) SaveView(ctx context.Context, userID, id int64, input asset
 	return saved, err
 }
 
-func (r *Repository) DeleteView(ctx context.Context, userID, id int64, version int) error {
+// DeleteViews applies the last-view and version checks in one user transaction.
+func (r *Repository) DeleteViews(ctx context.Context, userID int64, items []assetdomain.BatchItem) error {
 	return r.Write(ctx, userID, func(tx *Repository) error {
-		v, err := tx.view(userID, id)
-		if err != nil {
-			return err
-		}
-		if v.Version != version {
-			return assetdomain.ErrConflict
-		}
 		var count int64
-		if err = tx.db.Model(&assetdomain.View{}).Where("user_id=? AND deleted_at IS NULL", userID).Count(&count).Error; err != nil {
-			return err
+		if e := tx.db.Model(&assetdomain.View{}).Where("user_id=? AND deleted_at IS NULL", userID).Count(&count).Error; e != nil {
+			return e
 		}
-		if count <= 1 {
+		if count <= int64(len(items)) {
 			return assetdomain.ErrLastView
 		}
-		now := time.Now().UTC()
-		return tx.db.Model(&v).Updates(map[string]any{"deleted_at": now, "updated_at": now, "version": v.Version + 1}).Error
+		for _, item := range items {
+			id, _ := assetdomain.ParseID(item.ID)
+			v, e := tx.view(userID, id)
+			if e != nil {
+				return e
+			}
+			if v.Version != item.Version {
+				return assetdomain.ErrConflict
+			}
+			if e = tx.db.Model(&v).Updates(map[string]any{"deleted_at": time.Now().UTC(), "updated_at": time.Now().UTC(), "version": v.Version + 1}).Error; e != nil {
+				return e
+			}
+		}
+		return nil
 	})
+}
+func (r *Repository) DeleteView(ctx context.Context, userID, id int64, version int) error {
+	return r.DeleteViews(ctx, userID, []assetdomain.BatchItem{{ID: assetdomain.FormatID(id), Version: version}})
 }
 
 // 回收站可见性独立于用户规则，父目录回收后整棵子树隐藏。

@@ -1,3 +1,12 @@
+import { activateResource } from "@/lib/requests/invalidation"
+import { loadTodos, useTodos } from "@/features/todos/store"
+import { loadMail } from "@/features/mail/store"
+import { loadAssets } from "@/features/assets/store"
+import {
+  dashboardStatisticsSchema,
+  emptyStatistics,
+  useWorkbenchQuery,
+} from "@/features/workbench/remote"
 import { TodoState } from "@/features/todos/components/todo-state"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router"
@@ -250,7 +259,34 @@ function OverviewControls({
 
 /** 原 Workflow 页面现在展示自动派生的资源关系，不维护独立的图记录。 */
 export function Workflows() {
-  const { data } = useWorkbench()
+  const { data: currentData } = useWorkbench()
+  const { userId, counts } = useTodos()
+  const summary = useWorkbenchQuery(
+    "/statistics",
+    dashboardStatisticsSchema,
+    emptyStatistics,
+    undefined,
+    "workflows"
+  )
+  useEffect(() => {
+    const release = [
+      activateResource("todos"),
+      activateResource("mail"),
+      activateResource("assets"),
+    ]
+    void Promise.all([loadTodos(), loadMail(), loadAssets()])
+    return () => release.forEach((stop) => stop())
+  }, [userId])
+  const data = useMemo(
+    () => ({
+      ...currentData,
+      todoCounts: counts,
+      assetSummary: currentData.assetSummary
+        ? { ...currentData.assetSummary, storage: summary.data.assets.storage }
+        : undefined,
+    }),
+    [currentData, counts, summary.data]
+  )
   const [params, setParams] = useSearchParams()
   const category = params.get("category") ?? "all"
   const graph = useMemo(

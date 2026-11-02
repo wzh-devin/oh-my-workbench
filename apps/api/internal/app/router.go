@@ -21,6 +21,9 @@ import (
 	todohandler "github.com/devin/oh-my-workbench/api/internal/modules/todos/handler"
 	todorepo "github.com/devin/oh-my-workbench/api/internal/modules/todos/repository"
 	todoservice "github.com/devin/oh-my-workbench/api/internal/modules/todos/service"
+	workbenchhandler "github.com/devin/oh-my-workbench/api/internal/modules/workbench/handler"
+	workbenchrepo "github.com/devin/oh-my-workbench/api/internal/modules/workbench/repository"
+	workbenchservice "github.com/devin/oh-my-workbench/api/internal/modules/workbench/service"
 	"github.com/devin/oh-my-workbench/api/internal/platform/logging"
 	"github.com/devin/oh-my-workbench/api/internal/shared/response"
 )
@@ -53,6 +56,7 @@ func newRouter(db *gorm.DB, rdb *redis.Client, mailService *mailservice.Service,
 	handler.RegisterSecurityRoutes(api.Group("/account/security", handler.RequireSession))
 	todoHandler := todohandler.NewHandler(todoservice.NewService(todorepo.NewRepository(db)))
 	todoHandler.RegisterRoutes(api.Group("/todos", handler.RequireSession))
+	workbenchhandler.NewHandler(workbenchservice.NewService(workbenchrepo.NewRepository(db))).RegisterRoutes(api.Group("/workbench", handler.RequireSession))
 	mailhandler.NewHandler(mailService).RegisterRoutes(api.Group("/mail", handler.RequireSession))
 	if proxySettings != nil {
 		settingshandler.NewProxyHandler(proxySettings).RegisterRoutes(api.Group("/settings/proxies", handler.RequireSession))

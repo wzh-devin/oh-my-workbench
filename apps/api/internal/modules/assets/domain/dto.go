@@ -16,15 +16,25 @@ type ImportEntry struct {
 }
 
 type ConnectionInput struct {
-	Name      string `json:"name"`
-	Endpoint  string `json:"endpoint"`
-	Region    string `json:"region"`
-	Bucket    string `json:"bucket"`
-	Prefix    string `json:"prefix"`
-	AccessKey string `json:"accessKey"`
-	SecretKey string `json:"secretKey"`
-	Enabled   bool   `json:"enabled"`
-	Version   int    `json:"version"`
+	ID              string `json:"id,omitempty"`
+	Name            string `json:"name"`
+	Endpoint        string `json:"endpoint"`
+	PublicEndpoint  string `json:"publicEndpoint"`
+	AddressingStyle string `json:"addressingStyle"`
+	Region          string `json:"region"`
+	Bucket          string `json:"bucket"`
+	Prefix          string `json:"prefix"`
+	AccessKey       string `json:"accessKey"`
+	SecretKey       string `json:"secretKey"`
+	Enabled         bool   `json:"enabled"`
+	Version         int    `json:"version"`
+}
+
+// ContentAccess 仅授予单个已鉴权文件的临时读取权限，不向浏览器发送存储凭证。
+type ContentAccess struct {
+	URL       string     `json:"url"`
+	ExpiresAt *time.Time `json:"expiresAt"`
+	CacheKey  string     `json:"cacheKey"`
 }
 
 type QueryInput struct {
@@ -35,7 +45,7 @@ type QueryInput struct {
 	Search       string          `json:"search"`
 	FilterQuery  json.RawMessage `json:"filterQuery"`
 	Sort         string          `json:"sort"`
-	Page         int             `json:"page"`
+	Page         int             `json:"pageNum"`
 	PageSize     int             `json:"pageSize"`
 	CursorMode   bool            `json:"cursorMode"`
 	Cursor       string          `json:"cursor"`
@@ -49,6 +59,7 @@ type QueryResult struct {
 }
 
 type EntryInput struct {
+	ID           string  `json:"id,omitempty"`
 	ConnectionID string  `json:"connectionId"`
 	ParentID     *string `json:"parentId"`
 	Name         *string `json:"name"`
@@ -73,6 +84,7 @@ type BatchInput struct {
 }
 
 type ViewInput struct {
+	ID          string          `json:"id,omitempty"`
 	Name        string          `json:"name"`
 	Icon        string          `json:"icon"`
 	FilterQuery json.RawMessage `json:"filterQuery"`
@@ -118,4 +130,14 @@ func ConnectionView(c Connection) Connection {
 		c.Status = "connected"
 	}
 	return c
+}
+
+// Statistics 不包含列表或连接配置，可由Dashboard独立获取。
+type Statistics struct {
+	Total     int64             `json:"total"`
+	Size      int64             `json:"size"`
+	Images    int64             `json:"images"`
+	Documents int64             `json:"documents"`
+	Daily     map[string]int64  `json:"daily"`
+	Storage   []ConnectionStats `json:"storage"`
 }

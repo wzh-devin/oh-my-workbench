@@ -205,3 +205,8 @@ func (r *Repository) RecordImport(userID, id int64, legacyID string, createdAt, 
 	}
 	return r.db.Model(&tododomain.Task{}).Where("user_id = ? AND id = ? AND legacy_id IS NULL", userID, id).Updates(values).Error
 }
+
+// DetachListTasks moves all tasks without returning an unbounded task snapshot.
+func (r *Repository) DetachListTasks(userID, listID int64, at time.Time) error {
+	return r.db.Model(&tododomain.Task{}).Where("user_id=? AND list_id=?", userID, listID).Updates(map[string]any{"list_id": nil, "version": gorm.Expr("version + 1"), "updated_at": at}).Error
+}

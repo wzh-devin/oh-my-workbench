@@ -11,6 +11,8 @@ import {
   listSchema,
   remoteTodoSchema,
   snapshotSchema,
+  taskPageSchema,
+  type TaskQuery,
   type TodoChanges,
 } from "./model"
 
@@ -85,44 +87,55 @@ const taskBody = (changes: TodoChanges, version?: number) => ({
 })
 
 export const todoApi = {
-  snapshot: (signal: AbortSignal) => request("", "GET", snapshotSchema, signal),
+  lists: (signal: AbortSignal) =>
+    request("/lists", "GET", z.array(listSchema), signal),
+  views: (signal: AbortSignal) =>
+    request("/views", "GET", z.array(todoViewSchema), signal),
+  priorities: (signal: AbortSignal) =>
+    request("/priorities", "GET", z.array(todoPrioritySchema), signal),
+  counts: (signal: AbortSignal) =>
+    request("/counts", "GET", z.record(z.string(), z.number()), signal),
+  detail: (id: string, signal: AbortSignal) =>
+    request(
+      `/tasks/${encodeURIComponent(id)}`,
+      "GET",
+      remoteTodoSchema,
+      signal
+    ),
+  page: (input: TaskQuery, signal: AbortSignal) =>
+    request("/tasks/page", "POST", taskPageSchema, signal, input),
   create: (changes: TodoChanges, signal: AbortSignal) =>
-    request("/tasks", "POST", remoteTodoSchema, signal, taskBody(changes)),
+    request("/tasks/save", "POST", remoteTodoSchema, signal, taskBody(changes)),
   update: (
     id: string,
     version: number,
     changes: TodoChanges,
     signal: AbortSignal
   ) =>
-    request(
-      `/tasks/${id}`,
-      "PATCH",
-      remoteTodoSchema,
-      signal,
-      taskBody(changes, version)
-    ),
+    request("/tasks/update", "POST", remoteTodoSchema, signal, {
+      id,
+      ...taskBody(changes, version),
+    }),
   remove: (id: string, version: number, signal: AbortSignal) =>
     request(
-      `/tasks/${id}`,
-      "DELETE",
+      "/tasks/deleteBatch",
+      "POST",
       z.null().transform(() => true),
       signal,
-      { version }
+      { items: [{ id, version }] }
     ),
   saveList: (name: string, id: string | undefined, signal: AbortSignal) =>
-    request(
-      id ? `/lists/${id}` : "/lists",
-      id ? "PATCH" : "POST",
-      listSchema,
-      signal,
-      { name }
-    ),
+    request(id ? "/lists/update" : "/lists/save", "POST", listSchema, signal, {
+      name,
+      ...(id ? { id } : {}),
+    }),
   removeList: (id: string, signal: AbortSignal) =>
     request(
-      `/lists/${id}`,
-      "DELETE",
-      z.object({ id: z.string(), todos: z.array(remoteTodoSchema) }),
-      signal
+      "/lists/deleteBatch",
+      "POST",
+      z.null().transform(() => true),
+      signal,
+      { items: [{ id }] }
     ),
   import: (body: unknown, signal: AbortSignal) =>
     request("/import", "POST", snapshotSchema, signal, body),
@@ -132,24 +145,24 @@ export const todoApi = {
     signal: AbortSignal
   ) =>
     request(
-      view ? `/views/${view.id}` : "/views",
-      view ? "PATCH" : "POST",
+      view ? "/views/update" : "/views/save",
+      "POST",
       todoViewSchema,
       signal,
-      { ...changes, ...(view ? { version: view.version } : {}) }
+      { ...changes, ...(view ? { id: view.id, version: view.version } : {}) }
     ),
   removeView: (view: TodoView, signal: AbortSignal) =>
     request(
-      `/views/${view.id}`,
-      "DELETE",
+      "/views/deleteBatch",
+      "POST",
       z.null().transform(() => true),
       signal,
-      { version: view.version }
+      { items: [{ id: view.id, version: view.version }] }
     ),
   savePriorities: (priorities: TodoPriority[], signal: AbortSignal) =>
     request(
-      "/priorities",
-      "PUT",
+      "/priorities/update",
+      "POST",
       z.array(todoPrioritySchema).length(4),
       signal,
       {

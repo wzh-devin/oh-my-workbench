@@ -6,7 +6,37 @@
 
 ## 连接与运行
 
-在资产页面填写已有 S3/MinIO 的 Endpoint、Bucket、Region、访问凭证和管理前缀即可；存储连接不需要环境变量，也不需要存储服务提供方增加任何配置。没有连接时显示“暂时没有配置存储”和配置入口。
+在资产页面填写已有 S3 兼容存储的 Endpoint、Bucket、Region、访问凭证和管理前缀；配置保存在存储连接中，不需要环境变量。没有连接时显示“暂时没有配置存储”和配置入口。
+
+### 私有文件签名分发
+
+连接中的“公开访问端点”用于浏览器读取文件，必须指向与服务端 Endpoint 相同的存储和 Bucket，例如服务端为 `http://minio:9000`，公开端点为 `https://files.example.com`。填写后，预览和下载先请求 `GET /api/assets/entries/:id/access` 检查登录、归属、回收状态与内容限制，再由浏览器使用15分钟签名链接读取私有对象；文件正文不经过Go。空值保留工作台转发，旧连接升级后仍按原方式工作。工作台使用HTTPS时，公开端点也应使用HTTPS；反向代理须保留签名URL中的Host、路径及查询参数。
+
+`GET /api/assets/entries/:id/access` 返回既有ApiResult，`data`为 `{ "url": "https://files.example.com/已签名的对象地址", "expiresAt": "2026-11-02T13:15:00Z", "cacheKey": "文件版本标识" }`。`preview=1`读取已转换Office产物，`download=1`使用附件方式；旧转发模式的URL是原content接口，expiresAt为null。签名URL只能用于GET（包含Range），不能直接改成HEAD请求。
+
+MinIO通常选择“路径”寻址；需要 `bucket.endpoint` 的存储选择“虚拟主机”。服务端与公开端点使用相同寻址方式，填写区域的基础Endpoint，不在地址中重复填写Bucket。AWS S3及阿里云OSS等按对应服务的S3兼容规则配置，不能将原生OSS签名当作S3签名。阿里云文档提供S3兼容端点（如 `https://s3.oss-cn-hangzhou.aliyuncs.com`），还需核对账号兼容认证、自定义域名政策、区域及完整上传/版本API支持；本项目没有凭此声明所有OSS账号已经验收。参考[阿里云S3兼容接入](https://www.alibabacloud.com/help/en/oss/developer-reference/use-aws-sdks-to-access-oss)。
+
+Bucket保持私有，不开启匿名访问。文本/PDF跨域预览需要存储允许工作台Origin的GET/HEAD，允许Range、If-None-Match、If-Modified-Since请求头，并暴露ETag、Accept-Ranges、Content-Length、Content-Range、Content-Disposition。例如按存储服务要求设置以下等价CORS规则（将Origin替换为实际工作台地址）：
+
+```xml
+<CORSConfiguration>
+  <CORSRule>
+    <AllowedOrigin>https://omw.example.com</AllowedOrigin>
+    <AllowedMethod>GET</AllowedMethod>
+    <AllowedMethod>HEAD</AllowedMethod>
+    <AllowedHeader>Range</AllowedHeader>
+    <AllowedHeader>If-None-Match</AllowedHeader>
+    <AllowedHeader>If-Modified-Since</AllowedHeader>
+    <ExposeHeader>ETag</ExposeHeader>
+    <ExposeHeader>Accept-Ranges</ExposeHeader>
+    <ExposeHeader>Content-Length</ExposeHeader>
+    <ExposeHeader>Content-Range</ExposeHeader>
+    <ExposeHeader>Content-Disposition</ExposeHeader>
+  </CORSRule>
+</CORSConfiguration>
+```
+
+浏览器每次打开仍向API鉴权，并在内存中复用相同文件版本的未过期URL；原图响应以private和固定到期时间Expires缓存，不晚于该链接到期，下载仍为no-store。链接失效后重试重新签发；已经签发的链接在到期前可能继续有效，应用撤权只阻止后续签发。链接属于临时凭证，禁止记录完整签名；应用日志对签名参数脱敏。直连仍经过同一公网出口时，不会增加出口带宽。旧content GET/HEAD和缩略图接口保留。
 
 工作台首次启动自动生成内部凭证加密密钥并保存到 `omw_system_setting` 的系统配置，后续启动与多实例复用数据库值。备份和恢复需包含数据库的系统配置。
 
@@ -64,20 +94,19 @@ WHERE renderer_version='thumbnail-512-v1'
 - `cleaning` 对象禁止新引用；仅在包括回收站在内的最后一个条目解除引用后清理。已知版本用于读取，清理同时核对该稳定 Key 的所有版本和删除标记。
 - 视图使用通用 `schemaVersion=1` AST；用户隔离和回收站条件始终额外附加。规则递归转换为白名单字段与参数化 SQL。
 
-## 兼容与 API
+## API
 
 ID 在 JSON 中为字符串。修改条目和视图携带 `version`；409 时保留草稿并重载版本。同目录名称不覆盖。批量操作和上传初始化携带 `requestKey`，重试沿用原标识。
 
-`GET /overview` 返回总量、容量、分类、按天活动、连接统计、目录和近期文件；`POST /entries/query` 返回当前页与相同条件的总数。`GET /entries/:id/content` 每个请求重新鉴权，支持单 Range 的 206/416。下载使用浏览器流式保存。
+`GET /connections`、`/views`、`/directories`、`/statistics` 分别返回连接、视图、目录与统计。`POST /entries/page` 在 JSON 请求体携带分页、排序和完整筛选树，不将规则放进 URL。`GET /entries/:id/content` 每个请求重新鉴权，支持单 Range 的 206/416。下载使用浏览器流式保存。
 
 列表条目可包含 `thumbnail: {status, version?}`，ready时version标识可缓存产物。`GET/HEAD /entries/:id/thumbnail?v=<version>`读取WebP，仍检查用户、连接启用状态及回收站可见性，权限检查后才处理ETag/304，响应为 `Cache-Control: private, no-cache`。`POST /entries/:id/thumbnail`显式重试失败记录；客户端不传Blob ID、对象Key、规格或远程URL。
 
 旧浏览器数据由用户在“导入”中选择来源和目标。原件保留，`legacyId` 映射在服务端去重；全部内容上传后按批次恢复原元数据。重试不会覆盖之后的远端编辑。旧文件/目录链接通过详情入口解析为新 ID。
 
-
 ## 连续浏览与阅读预览
 
-`POST /entries/query`传`cursorMode:true`、`pageSize:50`，首批不传cursor，后续携带响应`nextCursor`；`hasMore:false`表示结束。游标保存folder优先级、所选排序值和最后ID，绑定用户及完整查询条件，所有值仍作SQL参数且每次重新鉴权。锚点删除不影响继续读取；筛选/目录/排序/身份改变须丢弃旧游标。新模式不执行OFFSET和逐批COUNT，total仅保留为旧契约字段；page/pageSize模式继续兼容已有调用。
+`POST /entries/page`传`cursorMode:true`、`pageSize:50`，首批不传cursor，后续携带响应`nextCursor`；`hasMore:false`表示结束。游标保存folder优先级、所选排序值和最后ID，绑定用户及完整查询条件，所有值仍作SQL参数且每次重新鉴权。锚点删除不影响继续读取；筛选/目录/排序/身份改变须丢弃旧游标。新模式不执行OFFSET和逐批COUNT，total仅保留为旧契约字段；pageNum/pageSize模式提供按页读取（pageNum从1开始）。
 
 Web列表/网格连续追加、去重，使用现有TanStack Virtual只渲染可见行/卡片；错误保留已加载数据并原位重试。所有已加载元数据保留，切换查询额外保留最近600项，避免早期条目无法操作。仍遵守服务端每批最多200项操作，超过时全选入口明确为选择前200项，不擅自放大数据库事务。
 

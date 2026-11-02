@@ -109,6 +109,8 @@ export type AssetUpload = z.infer<typeof uploadSchema>
 export type ConnectionInput = {
   name: string
   endpoint: string
+  publicEndpoint?: string
+  addressingStyle?: "path" | "virtual"
   bucket: string
   region: string
   prefix: string

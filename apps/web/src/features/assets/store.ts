@@ -1,6 +1,16 @@
 import { useSyncExternalStore } from "react"
 import { toast } from "sonner"
-import { assetApi, AssetApiError, assetContentURL } from "./api"
+import {
+  notifyResourceChange,
+  resourceIsActive,
+} from "@/lib/requests/invalidation"
+import { coalesceRead } from "@/lib/requests/coalesce-read"
+import {
+  assetApi,
+  AssetApiError,
+  clearAssetContentLinks,
+  getAssetContentURL,
+} from "./api"
 import { entrySchema } from "./model"
 import type {
   AssetOverview,
@@ -62,6 +72,7 @@ export const setAssetUser = (
 ) => {
   unauthorized = refresh
   if (state.userId === userId) return
+  clearAssetContentLinks()
   generation++
   reads?.abort()
   requests.forEach((request) => request.abort())
@@ -74,36 +85,44 @@ export const setAssetUser = (
     busyIds: [],
     revision: state.revision + 1,
   })
-  if (userId) void loadAssets()
 }
 /** 汇总更新统一使列表失效；失败保留上一次成功汇总并提供重试。 */
-export const loadAssets = async (invalidate = false) => {
-  if (!state.userId) return
-  reads?.abort()
-  const controller = new AbortController()
-  reads = controller
-  const owner = generation
-  try {
-    const overview = await assetApi.overview(controller.signal)
-    if (owner !== generation || controller.signal.aborted) return
-    toast.dismiss("asset-load")
-    if (
-      invalidate ||
-      state.status !== "ready" ||
-      JSON.stringify(overview) !== JSON.stringify(state.overview)
-    )
-      publish({ overview, status: "ready", revision: state.revision + 1 })
-  } catch (error) {
-    if (owner !== generation || controller.signal.aborted) return
-    if (state.status !== "ready") publish({ status: "error" })
-    toast.error(error instanceof Error ? error.message : "读取资产失败", {
-      id: "asset-load",
-      action: { label: "重试", onClick: () => void loadAssets() },
-    })
-    if (error instanceof AssetApiError && error.status === 401)
-      void unauthorized?.()
-  }
-}
+export const loadAssets = coalesceRead(
+  () => generation,
+  async (invalidate) => {
+    if (!state.userId) return
+    reads?.abort()
+    const controller = new AbortController()
+    reads = controller
+    const owner = generation
+    try {
+      const [connections, folders, views] = await Promise.all([
+        assetApi.connections(controller.signal),
+        assetApi.directories(controller.signal),
+        assetApi.views(controller.signal),
+      ])
+      const overview = { ...state.overview, connections, folders, views }
+      if (owner !== generation || controller.signal.aborted) return
+      toast.dismiss("asset-load")
+      if (
+        invalidate ||
+        state.status !== "ready" ||
+        JSON.stringify(overview) !== JSON.stringify(state.overview)
+      )
+        publish({ overview, status: "ready", revision: state.revision + 1 })
+    } catch (error) {
+      if (owner !== generation || controller.signal.aborted) return
+      if (state.status !== "ready") publish({ status: "error" })
+      toast.error(error instanceof Error ? error.message : "读取资产失败", {
+        id: "asset-load",
+        action: { label: "重试", onClick: () => void loadAssets() },
+      })
+      if (error instanceof AssetApiError && error.status === 401)
+        void unauthorized?.()
+    }
+  },
+  () => reads?.abort()
+)
 /** 请求归属固定在启动时，旧用户的迟到响应不能进入当前快照。 */
 export const assetOperation = async <T>(
   key: string,
@@ -123,7 +142,11 @@ export const assetOperation = async <T>(
     const changed = entrySchema.safeParse(result)
     if (changed.success && state.userId)
       rememberEntries([changed.data], state.userId)
-    if (reload) await loadAssets(true)
+    if (reload) {
+      if (resourceIsActive("assets")) await loadAssets(true)
+      else publish({ revision: state.revision + 1 })
+      notifyResourceChange("assets")
+    }
     if (owner !== generation || controller.signal.aborted)
       throw new DOMException("请求已取消", "AbortError")
     return result
@@ -280,18 +303,11 @@ export const downloadRemoteAsset = (id: string) =>
   assetOperation(
     `download:${id}`,
     async (signal) => {
-      const url = assetContentURL(id, "download"),
-        response = await fetch(url, {
-          method: "HEAD",
-          credentials: "same-origin",
-          signal,
-          cache: "no-store",
-        })
-      if (!response.ok)
-        throw new AssetApiError("文件下载失败，请重试", response.status)
+      const url = await getAssetContentURL(id, "download", signal)
       const link = document.createElement("a")
       link.href = url
       link.download = ""
+      link.referrerPolicy = "no-referrer"
       document.body.append(link)
       link.click()
       link.remove()

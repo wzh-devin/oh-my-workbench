@@ -56,7 +56,7 @@ func mailError(c *gin.Context, err error) {
 }
 
 func bind(c *gin.Context, input any) bool {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<10)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
 	decoder := json.NewDecoder(c.Request.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(input); err != nil {
@@ -93,13 +93,9 @@ func (h *Handler) SaveAccount(c *gin.Context) {
 	if !bind(c, &input) {
 		return
 	}
-	var id int64
-	if c.Param("id") != "" {
-		value, ok := pathID(c)
-		if !ok {
-			return
-		}
-		id = value
+	id, ok := mutationID(c, input.ID)
+	if !ok {
+		return
 	}
 	out, err := h.service.SaveAccount(c.Request.Context(), authhandler.CurrentUserID(c), id, input)
 	if err != nil {
@@ -109,9 +105,13 @@ func (h *Handler) SaveAccount(c *gin.Context) {
 	response.Success(c, out)
 }
 
-func (h *Handler) Query(c *gin.Context) {
-	var input maildomain.QueryInput
+func (h *Handler) Page(c *gin.Context) {
+	input := maildomain.QueryInput{Page: 1, PageSize: 10}
 	if !bind(c, &input) {
+		return
+	}
+	if input.Page < 1 {
+		mailError(c, maildomain.ErrInvalid)
 		return
 	}
 	out, err := h.service.Query(c.Request.Context(), authhandler.CurrentUserID(c), input)
@@ -136,12 +136,12 @@ func (h *Handler) Message(c *gin.Context) {
 }
 
 func (h *Handler) ChangeMessage(c *gin.Context) {
-	id, ok := pathID(c)
-	if !ok {
-		return
-	}
 	var input maildomain.MessageChanges
 	if !bind(c, &input) {
+		return
+	}
+	id, ok := mutationID(c, input.ID)
+	if !ok {
 		return
 	}
 	if input.Version < 1 || input.Read == nil && input.Starred == nil && input.Archived == nil {
@@ -182,16 +182,6 @@ func (h *Handler) Job(c *gin.Context) {
 	response.Success(c, out)
 }
 
-func (h *Handler) Overview(c *gin.Context) {
-	out, err := h.service.Overview(c.Request.Context(), authhandler.CurrentUserID(c))
-	if err != nil {
-		mailError(c, err)
-		return
-	}
-	response.Success(c, out)
-}
-
-// Download sends safe attachment headers only after authentication and remote lookup succeed.
 func (h *Handler) Download(c *gin.Context) {
 	id, ok := pathID(c)
 	if !ok {
@@ -366,4 +356,20 @@ func (h *Handler) BulkMessages(c *gin.Context) {
 		return
 	}
 	response.Success(c, result)
+}
+
+func mutationID(c *gin.Context, value string) (int64, bool) {
+	if strings.HasSuffix(c.FullPath(), "/save") {
+		if value != "" {
+			mailError(c, maildomain.ErrInvalid)
+			return 0, false
+		}
+		return 0, true
+	}
+	id, e := maildomain.ParseID(value)
+	if e != nil {
+		mailError(c, e)
+		return 0, false
+	}
+	return id, true
 }

@@ -123,6 +123,7 @@ export const useWorkbench = () => {
     () => ({
       ...current.data,
       ...todos.data,
+      todoCounts: todos.counts,
       accounts: mail.overview.accounts,
       messages: mail.overview.messages,
       mailSummary: mail.overview,
@@ -139,7 +140,7 @@ export const useWorkbench = () => {
         },
       },
     }),
-    [current.data, todos.data, mail.overview, assets.overview]
+    [current.data, todos.data, todos.counts, mail.overview, assets.overview]
   )
   return {
     ...current,

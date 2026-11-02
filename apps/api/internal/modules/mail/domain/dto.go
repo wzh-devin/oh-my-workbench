@@ -5,6 +5,7 @@ import "encoding/json"
 // 邮箱 HTTP 输入与输出契约；公开数据不包含授权凭证。
 // AccountInput exposes editable fields; host, port and TLS are provider templates.
 type AccountInput struct {
+	ID            string `json:"id,omitempty"`
 	Name          string `json:"name"`
 	Provider      string `json:"provider"`
 	Email         string `json:"email"`
@@ -27,14 +28,15 @@ type AccountView struct {
 
 type MessageView struct {
 	Message
-	Attachments []Attachment `json:"attachments"`
+	Attachments []Attachment `json:"attachments" gorm:"-"`
+	TodoID      *int64       `json:"todoId,string,omitempty"`
 }
 
 type QueryInput struct {
 	AccountID   string          `json:"accountId"`
 	SearchText  string          `json:"searchText"`
 	FilterQuery json.RawMessage `json:"filterQuery"`
-	Page        int             `json:"page"`
+	Page        int             `json:"pageNum"`
 	PageSize    int             `json:"pageSize"`
 	Sort        string          `json:"sort"`
 	Archived    bool            `json:"archived"`
@@ -48,10 +50,11 @@ type QueryResult struct {
 }
 
 type MessageChanges struct {
-	Version  int   `json:"version"`
-	Read     *bool `json:"read"`
-	Starred  *bool `json:"starred"`
-	Archived *bool `json:"archived"`
+	ID       string `json:"id,omitempty"`
+	Version  int    `json:"version"`
+	Read     *bool  `json:"read"`
+	Starred  *bool  `json:"starred"`
+	Archived *bool  `json:"archived"`
 }
 
 type NotificationView struct {

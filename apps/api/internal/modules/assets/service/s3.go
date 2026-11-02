@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"golang.org/x/net/proxy"
 
@@ -30,6 +31,22 @@ type storage struct {
 type endpointTransport struct {
 	origin    string
 	transport http.RoundTripper
+}
+
+func bucketLookup(c assetdomain.Connection) minio.BucketLookupType {
+	if c.AddressingStyle == "virtual" {
+		return minio.BucketLookupDNS
+	}
+	return minio.BucketLookupPath
+}
+
+// 让SDK规范化区域与Bucket主机；请求仍只能到该精确源，不允许任意同后缀主机。
+func storageOrigin(ctx context.Context, client *minio.Client, c assetdomain.Connection) (string, error) {
+	link, err := client.PresignedHeadObject(ctx, c.Bucket, ".workbench-origin", time.Second, nil)
+	if err != nil {
+		return "", err
+	}
+	return link.Scheme + "://" + strings.ToLower(link.Host), nil
 }
 
 func (t endpointTransport) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -62,7 +79,12 @@ func (s *Service) storage(ctx context.Context, c assetdomain.Connection) (*stora
 	if err != nil {
 		return nil, err
 	}
-	client, err := minio.New(u.Host, &minio.Options{Creds: credentials.NewStaticV4(access, secret, ""), Secure: u.Scheme == "https", Region: region, BucketLookup: minio.BucketLookupPath, Transport: endpointTransport{u.String(), transport.Transport}})
+	pinned := &endpointTransport{transport: transport.Transport}
+	client, err := minio.New(u.Host, &minio.Options{Creds: credentials.NewStaticV4(access, secret, ""), Secure: u.Scheme == "https", Region: region, BucketLookup: bucketLookup(c), Transport: pinned})
+	if err != nil {
+		return nil, err
+	}
+	pinned.origin, err = storageOrigin(ctx, client, c)
 	if err != nil {
 		return nil, err
 	}

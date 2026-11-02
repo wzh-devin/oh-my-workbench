@@ -120,6 +120,20 @@ func endpointURL(value string) (*url.URL, error) {
 
 func (s *Service) SaveConnection(ctx context.Context, userID, id int64, input assetdomain.ConnectionInput) (assetdomain.Connection, error) {
 	input.Name = strings.TrimSpace(input.Name)
+	input.PublicEndpoint = strings.TrimSpace(input.PublicEndpoint)
+	if input.AddressingStyle == "" {
+		input.AddressingStyle = "path"
+	}
+	if input.AddressingStyle != "path" && input.AddressingStyle != "virtual" {
+		return assetdomain.Connection{}, assetdomain.ErrInvalid
+	}
+	if input.PublicEndpoint != "" {
+		publicURL, err := endpointURL(input.PublicEndpoint)
+		if err != nil || !validStorageEndpoint(publicURL) {
+			return assetdomain.Connection{}, assetdomain.ErrEndpoint
+		}
+		input.PublicEndpoint = publicURL.String()
+	}
 	u, err := endpointURL(input.Endpoint)
 	if err != nil || !assetdomain.ValidText(input.Name, 100) || !bucketPattern.MatchString(input.Bucket) || strings.Contains(input.Bucket, "..") || len(input.Region) > 64 || !validPrefix(input.Prefix) {
 		return assetdomain.Connection{}, assetdomain.ErrInvalid
@@ -155,6 +169,8 @@ func (s *Service) SaveConnection(ctx context.Context, userID, id int64, input as
 		}
 		c.Name = input.Name
 		c.Endpoint = u.String()
+		c.PublicEndpoint = input.PublicEndpoint
+		c.AddressingStyle = input.AddressingStyle
 		c.Region = input.Region
 		c.Bucket = input.Bucket
 		c.Prefix = input.Prefix
