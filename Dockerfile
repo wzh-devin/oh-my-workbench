@@ -8,6 +8,9 @@ COPY apps/api/package.json apps/api/package.json
 RUN --mount=type=cache,id=flowly-pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --store-dir=/pnpm/store
 COPY apps/web/ apps/web/
+COPY CHANGELOG.md ./
+COPY scripts/changelog.mjs scripts/changelog.d.mts scripts/
+ARG APP_VERSION
 RUN pnpm --filter @workbench/web build
 
 FROM --platform=$BUILDPLATFORM golang:1.26.5-alpine AS api-build

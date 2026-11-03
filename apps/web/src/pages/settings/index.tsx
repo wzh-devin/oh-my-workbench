@@ -16,7 +16,7 @@ export default function SettingsPage() {
 
   return (
     <>
-      <title>{`${item.label} · Flowly`}</title>
+      <title>{`${item.label} · 个人工作台`}</title>
       <SettingsPanel item={item} />
     </>
   )

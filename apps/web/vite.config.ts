@@ -1,10 +1,19 @@
+import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
+import { buildChangelog } from "../../scripts/changelog.mjs"
+
+const changelog = new URL("../../CHANGELOG.md", import.meta.url)
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __APP_CHANGELOG__: JSON.stringify(
+      buildChangelog(readFileSync(changelog, "utf8"), process.env.APP_VERSION)
+    ),
+  },
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },

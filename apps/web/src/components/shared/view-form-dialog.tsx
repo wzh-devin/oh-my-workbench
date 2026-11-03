@@ -57,7 +57,7 @@ export function ViewFormDialog({
           onSubmit={onSubmit}
           noValidate
         >
-          <div className="min-h-0 min-w-0 overflow-y-auto">
+          <div className="min-h-0 min-w-0 scroll-content overflow-y-auto">
             <fieldset
               disabled={pending}
               className="flex min-w-0 flex-col gap-4"

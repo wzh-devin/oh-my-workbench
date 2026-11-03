@@ -13,7 +13,7 @@ export default function ErrorPage() {
 
   return (
     <main className="flex min-h-svh flex-col items-center justify-center gap-6 p-6 text-center">
-      <title>Something went wrong · Flowly</title>
+      <title>Something went wrong · 个人工作台</title>
       <div className="flex flex-col gap-2">
         <p className="text-xs font-medium tracking-widest text-muted-foreground uppercase">
           Error

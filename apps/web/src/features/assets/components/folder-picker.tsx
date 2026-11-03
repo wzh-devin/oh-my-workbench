@@ -79,7 +79,6 @@ export function FolderPicker({
           <Button
             type="button"
             variant="outline"
-            size="sm"
             className="w-full min-w-0 justify-between font-normal"
             aria-label="目标目录"
             title={path || selected}

@@ -140,8 +140,8 @@ export function UploadDialog({
         <DialogHeader>
           <DialogTitle>上传</DialogTitle>
         </DialogHeader>
-        {/* Card 使用外描边，滚动区域内留出 1px，防止两侧被裁掉。 */}
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-px">
+        {/* Card 的外描边保留 1px，行尾另留滚动条间距。 */}
+        <div className="flex min-h-0 flex-1 scroll-content flex-col gap-4 overflow-y-auto py-px ps-px">
           <div className="grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-2">
             <Field>
               <FieldLabel>目标存储</FieldLabel>

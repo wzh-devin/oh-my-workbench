@@ -1,19 +1,33 @@
-# Flowly / oh-my-workbench
+<div align="center">
 
-一个可自托管的个人工作台，将待办、邮箱、文件资产和资源关系集中在同一界面中，并提供工作流与 Agent 的可视化编辑入口。
+<a href="https://github.com/wzh-devin/oh-my-workbench">
+  <img src="apps/web/public/logo.svg" alt="Oh My Workbench Logo" width="112" height="112" />
+</a>
 
-项目采用 pnpm workspace 管理 React 前端与 Go API，使用 PostgreSQL 保存业务数据、Redis 管理登录会话，文件内容存储在兼容 S3 的对象存储中。
+<h1>Oh My Workbench</h1>
 
-## 目录
+<p>一个可自托管的个人工作台，集中管理待办、邮箱与文件资产。</p>
 
-- [功能概览](#功能概览)
-- [技术栈](#技术栈)
-- [快速开始](#快速开始)
-- [功能配置](#功能配置)
-- [开发指南](#开发指南)
-- [生产部署](#生产部署)
-- [相关文档](#相关文档)
-- [许可](#许可)
+<p>
+  <a href="https://github.com/wzh-devin/oh-my-workbench/tags"><img src="https://img.shields.io/github/v/tag/wzh-devin/oh-my-workbench?label=version&amp;style=flat-square" alt="最新版本" /></a>
+  <a href="https://github.com/wzh-devin/oh-my-workbench/actions/workflows/release.yaml"><img src="https://img.shields.io/github/actions/workflow/status/wzh-devin/oh-my-workbench/release.yaml?label=build&amp;style=flat-square" alt="发布构建状态" /></a>
+  <a href="https://github.com/wzh-devin/oh-my-workbench/commits/main"><img src="https://img.shields.io/github/last-commit/wzh-devin/oh-my-workbench?style=flat-square" alt="最近提交" /></a>
+  <a href="https://github.com/wzh-devin/oh-my-workbench/stargazers"><img src="https://img.shields.io/github/stars/wzh-devin/oh-my-workbench?style=flat-square" alt="GitHub Stars" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT 许可证" /></a>
+</p>
+
+<p>
+  <a href="#功能概览">功能概览</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#功能配置">功能配置</a> ·
+  <a href="#开发指南">开发指南</a> ·
+  <a href="#生产部署">部署指南</a> ·
+  <a href="CHANGELOG.md">更新日志</a> ·
+  <a href="apps/api/README.md">开发文档</a> ·
+  <a href="https://github.com/wzh-devin/oh-my-workbench/issues">问题反馈</a>
+</p>
+
+</div>
 
 ## 功能概览
 
@@ -29,6 +43,8 @@
 待办、邮箱、文件资产及网络代理配置由 API 持久化。工作流与 Agent 部分提供前端编辑和交互演示，尚未接入后端执行服务。邮箱的阅读、星标与归档是工作台内的状态，不修改远端邮箱。
 
 ## 技术栈
+
+项目采用 pnpm workspace 管理 React 前端与 Go API，使用 PostgreSQL 保存业务数据、Redis 管理登录会话，文件内容存储在兼容 S3 的对象存储中。
 
 | 层级       | 技术                                              |
 | ---------- | ------------------------------------------------- |
@@ -285,7 +301,7 @@ sudo cat /srv/oh-my-workbench/logs/api.log | jq 'select(.request_id == "实际�
 
 ### GitHub Actions 发布与部署
 
-推送 `vX.Y.Z` 标签会触发 [release.yaml](.github/workflows/release.yaml)。流程先确认标签格式及对应提交已进入 `main`，再构建 `linux/amd64`、`linux/arm64` 镜像，同时发布：
+推送 `vX.Y.Z` 标签会触发 [release.yaml](.github/workflows/release.yaml)。流程先确认标签格式及对应提交已进入 `main`，再构建 `linux/amd64`、`linux/arm64` 镜像，从 [CHANGELOG.md](CHANGELOG.md) 提取对应版本内容创建或更新 GitHub Release，然后部署应用。镜像同时发布：
 
 ```text
 ghcr.io/wzh-devin/oh-my-workbench:vX.Y.Z
@@ -347,12 +363,26 @@ Mihomo 接入 `infra` 且允许局域网连接后，应用的代理设置可填�
 
 #### 发布
 
+发布前按[更新日志模板](.github/CHANGELOG_TEMPLATE.md)将 [CHANGELOG.md](CHANGELOG.md) 的待发布内容整理为与标签一致的版本节，填写实际发布日期，并链接到上一版本的比较。分类使用 `Features`、`Bug Fixes`、`Performance Improvements` 等英文三级标题，说明保留中文；条目使用单行列表，标明模块，有真实关联时附上 Issue、PR 和提交短哈希链接。缺少对应版本或格式错误会使构建失败。根文件保留当前版本系列，历史较多后按大版本归档。
+
+```markdown
+## [v1.0.2](https://github.com/wzh-devin/oh-my-workbench/compare/v1.0.1...v1.0.2) - YYYY-MM-DD
+
+### Bug Fixes
+
+- **资产：** 描述修复的问题，并附上真实关联链接。
+```
+
+应用左下角头像菜单中的「更新日志」展示当前安装版本的说明与历史记录。正式版本号来自镜像构建标签，开发或未指定 `APP_VERSION` 的本地构建显示「开发版」；手动构建可用 `APP_VERSION=v1.0.2 pnpm build` 或 `docker build --build-arg APP_VERSION=v1.0.2 .` 指定版本。
+
+修改日志后需重启前端开发服务以重新读取内容。可先运行 `node scripts/changelog.mjs v1.0.2` 预览该版本的 GitHub Release 正文。
+
 将代码提交并推送到 `main` 后，创建并推送版本标签，例如：
 
 ```sh
 git push origin main
-git tag v1.0.1
-git push origin v1.0.1
+git tag v1.0.2
+git push origin v1.0.2
 ```
 
 修改工作流后需要推送指向新提交的版本标签；仅重新运行旧任务仍使用原版工作流。通常使用新的版本号；复用已有版本号会更新标签指向，并替换同名版本镜像。
@@ -382,6 +412,7 @@ Go 服务只提供 API。手动部署时还需要托管 `apps/web/dist`、配置
 
 ## 相关文档
 
+- [更新日志模板与发布检查](.github/CHANGELOG_TEMPLATE.md)
 - [环境变量示例](.env.example)
 - [API 启动、数据库迁移与邮箱配置](apps/api/README.md)
 - [后端业务模块规范](apps/api/internal/modules/README.md)

@@ -1,43 +1,67 @@
-# Changelog
+# 更新日志
 
-All notable changes to this template are documented here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the version
-numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+记录个人工作台每个版本中值得关注的变化，最新版本在前。未发布内容归入 `Unreleased`，发布前更新版本号和日期。
 
-## [1.0.0] - 2026-10-08
+## [Unreleased](https://github.com/wzh-devin/oh-my-workbench/compare/v1.0.2...HEAD)
 
-Initial release.
+## [v1.0.2](https://github.com/wzh-devin/oh-my-workbench/compare/v1.0.1...v1.0.2) - 2026-11-03
 
-Flowly is a workflow automation workspace on the Next.js App Router: two
-visual canvases, three list pages with full sheet CRUD, a dashboard that reads
-from the same data, and a ten section settings area. It runs entirely on the
-front end, so there is no database, no API key and no third party service
-anywhere in it.
+### Features
 
-### What is inside
+- **工作台：** 用户菜单提供更新日志入口，可查看当前安装版本与历史更新。
+- **工作台：** 更新个人工作台 W 标识，统一侧栏、手机顶栏与浏览器图标。
+- **工作台：** 页面标题统一为个人工作台。
 
-- **Workflow Editor.** A canvas where steps are dragged in from a step library
-  and wired together, with per step run state, an inline Ask AI panel and a
-  last run summary.
-- **AI Agent Builder.** A second canvas for agents, with a library of models,
-  data sources, messaging and tools, branch labels on the edges, and per step
-  results including token counts and cost.
-- **Dashboard.** Workflow health, live agents, run and failure counters, a run
-  activity chart, a Needs Attention queue and a workflow table, all reading the
-  same seed as the list pages.
-- **Workflows and Agents.** Tabbed list pages with a filter row, table and card
-  views, per row switches, and create, edit, duplicate, delete and CSV export
-  through a drawer.
-- **Settings.** Ten sections across workspace, automation, developer and
-  account, one route per section, all prerendered.
-- **Sign in.** Social, SSO and magic link paths, each simulating its result.
+### Documentation
 
-### Notes
+- **文档：** 重新整理 README 页头与中文导航，并提供发布日志模板。
 
-- Front end only. State lives in a workspace provider seeded from local
-  modules, so edits persist while the tab is open and reset on reload. The
-  places a backend attaches are marked in the source.
-- Light and dark themes throughout, including both canvases.
-- 27 Vitest files covering the data and interaction logic.
-- TypeScript is held on 6.x and `lucide-react` is pinned, both deliberately.
-  `pnpm-workspace.yaml` carries the reasons next to the pins.
+### Continuous Integration
+
+- **部署：** 发布说明与应用内日志共用 CHANGELOG，发布时自动同步到 GitHub Release。
+
+### Bug Fixes
+
+- **资产：** 统一目标目录和目标存储选择器的高度，新建、移动、复制和上传入口保持一致。
+- **界面：** 统一页面、弹窗、抽屉与表格滚动条的主题颜色，移除灰色轨道，并补齐滚动条与内容的间距。
+
+## [v1.0.1](https://github.com/wzh-devin/oh-my-workbench/compare/v1.0.0...v1.0.1) - 2026-11-03
+
+### Features
+
+- **资产：** 私有文件支持签名链接预览和下载，图片可复用浏览器缓存。([9ac516d](https://github.com/wzh-devin/oh-my-workbench/commit/9ac516da2a1bc919ae9c721d4367dd8a7a30b23e))
+- **资产：** 文件预览支持配置公开访问端点，以及路径和虚拟主机寻址。([9ac516d](https://github.com/wzh-devin/oh-my-workbench/commit/9ac516da2a1bc919ae9c721d4367dd8a7a30b23e))
+
+### Performance Improvements
+
+- **数据加载：** 待办、邮箱与资产按需读取列表、配置、详情和统计，减少重复加载。([9ac516d](https://github.com/wzh-devin/oh-my-workbench/commit/9ac516da2a1bc919ae9c721d4367dd8a7a30b23e))
+
+### Code Refactoring
+
+- **筛选：** 统一分页接口与复杂筛选请求，保留组合规则的分组和嵌套语义。([9ac516d](https://github.com/wzh-devin/oh-my-workbench/commit/9ac516da2a1bc919ae9c721d4367dd8a7a30b23e))
+
+## [v1.0.0](https://github.com/wzh-devin/oh-my-workbench/tree/v1.0.0) - 2026-11-02
+
+### Features
+
+- **工作台：** 集中展示待办、邮箱、资产与资源关系，提供统一的分类导航。([c88e14a](https://github.com/wzh-devin/oh-my-workbench/commit/c88e14a4d06e3511b1deaad1c57352cc77439186))
+- **待办：** 提供待办清单、每日计划、优先级、标签、步骤和自定义规则视图。([a5b141b](https://github.com/wzh-devin/oh-my-workbench/commit/a5b141b9fb0da7e62de7ce3a976d054193e11317))
+- **邮箱：** 接入 QQ 和 Gmail 邮箱，支持阅读、搜索、星标、归档与来信通知。([a2c1e64](https://github.com/wzh-devin/oh-my-workbench/commit/a2c1e643ad533732d1e4c40e060e87fb3441d32e))
+- **资产：** 接入兼容 S3 的对象存储，支持目录管理、分片上传、续传、移动、复制、回收站与文件预览。([7a66fe7](https://github.com/wzh-devin/oh-my-workbench/commit/7a66fe7b14e714cd5fb1663a39e6cef47974d4ac))
+- **设置：** 提供管理员初始化、密码登录、个人设置与按服务配置网络代理。([5b54a65](https://github.com/wzh-devin/oh-my-workbench/commit/5b54a65b62bc88c9c275020a440ec565aa3333f8))
+- **部署：** 支持 Docker 自托管，内置文件预览与缩略图服务，按版本标签构建镜像。([46d41ce](https://github.com/wzh-devin/oh-my-workbench/commit/46d41ceb6aacc80eac9be1238adb671808bc175f))
+- **日志：** 后端请求、响应、SQL 与业务错误写入 JSON 文件，通过请求编号关联；敏感信息脱敏，文件自动轮转，崩溃堆栈单独保存。([971f603](https://github.com/wzh-devin/oh-my-workbench/commit/971f603fcfe9025e0148d5ea6fbb3f9411994e7e))
+
+### Continuous Integration
+
+- **部署：** 通过 GitHub Actions 发布双架构镜像，并经 SSH 部署和检查服务健康状态。([7035bf1](https://github.com/wzh-devin/oh-my-workbench/commit/7035bf1ceb0c9afc3bf1cc0bc16d4f9c4a9ac7e3))
+
+### Build System
+
+- **日志：** 应用与缩略图服务保留持久日志卷，支持宿主机日志目录，并限制 Docker 标准输出日志大小。([971f603](https://github.com/wzh-devin/oh-my-workbench/commit/971f603fcfe9025e0148d5ea6fbb3f9411994e7e))
+
+### Bug Fixes
+
+- **部署：** 支持服务器 `.env` 配置文件和 Docker Compose 网络覆盖文件。([410b6ce](https://github.com/wzh-devin/oh-my-workbench/commit/410b6cebb308986050d06d2c02672973f7c6d733))
+- **部署：** 部署执行器先连接 NetBird，再访问内网 SSH 服务。([2b68981](https://github.com/wzh-devin/oh-my-workbench/commit/2b68981db07f44bb62b2cd8894fad6a99a3dc58e))
+- **部署：** 补充发布部署的 NetBird 启动诊断，便于定位内网连接失败。([fcf5f0f](https://github.com/wzh-devin/oh-my-workbench/commit/fcf5f0fa97462eb8b6002f3609de05fe76cd39b3))

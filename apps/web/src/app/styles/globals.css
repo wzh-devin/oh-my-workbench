@@ -103,6 +103,12 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
+  --scrollbar-thumb: color-mix(
+    in oklab,
+    var(--muted-foreground) 80%,
+    var(--background)
+  );
+  --scrollbar-thumb-hover: var(--muted-foreground);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -203,6 +209,41 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+  @media (pointer: fine) {
+    * {
+      scrollbar-width: thin;
+    }
+  }
+  @supports not (scrollbar-color: auto) {
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    ::-webkit-scrollbar-track,
+    ::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      border: 2px solid transparent;
+      border-radius: 999px;
+      background: var(--scrollbar-thumb);
+      background-clip: padding-box;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background-color: var(--scrollbar-thumb-hover);
+    }
+  }
+  @media (forced-colors: active) {
+    :root {
+      --scrollbar-thumb: CanvasText;
+      --scrollbar-thumb-hover: Highlight;
+    }
+    * {
+      scrollbar-color: auto;
+      scrollbar-width: auto;
+    }
   }
   body {
     /* `antialiased` is load-bearing, not taste. Without it macOS and WebKit
@@ -225,6 +266,21 @@
   }
 }
 
+@utility scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+
+  &:hover,
+  &:active {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+}
+
+/* Native content regions reserve a gutter without changing table geometry. */
+@utility scroll-content {
+  scrollbar-gutter: stable;
+  padding-inline-end: --spacing(3);
+}
+
 /* Holds an entering toast out of the pointer's reach for its 400ms slide.
    Toast options live in app/providers/app-providers.tsx. */
 @keyframes toast-settle {
@@ -245,6 +301,9 @@
   }
 
   & > [data-slot="scroll-area-viewport"] {
+    &[data-has-overflow-y] {
+      padding-inline-end: 0;
+    }
     mask-image: linear-gradient(
       to bottom,
       transparent 0,

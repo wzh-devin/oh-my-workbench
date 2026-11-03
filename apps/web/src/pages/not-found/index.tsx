@@ -7,7 +7,7 @@ import { buttonVariants } from "@/components/ui/button"
 export default function NotFound() {
   return (
     <main className="flex min-h-svh flex-col items-center justify-center gap-6 p-6 text-center">
-      <title>Page not found · Flowly</title>
+      <title>Page not found · 个人工作台</title>
       <div className="flex flex-col gap-2">
         <p className="text-xs font-medium tracking-widest text-muted-foreground uppercase">
           404

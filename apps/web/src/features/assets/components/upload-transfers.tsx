@@ -174,7 +174,7 @@ export function UploadTransfers({
               <TabsContent
                 key={value}
                 value={value}
-                className="min-h-0 overflow-y-auto"
+                className="min-h-0 scroll-content overflow-y-auto"
               >
                 {records.length ? (
                   <ul
