@@ -11,6 +11,7 @@ import {
   ListTodoIcon,
   MailIcon,
   FilesIcon,
+  NotebookPenIcon,
 } from "lucide-react"
 
 // ── Types ──
@@ -92,6 +93,13 @@ export const NAV_ITEMS: NavItem[] = [
     pageActions: true,
   },
   {
+    id: "notes",
+    label: "记事本",
+    href: "/notes",
+    icon: <NotebookPenIcon aria-hidden="true" />,
+    pageActions: true,
+  },
+  {
     id: "workflow-editor",
     hidden: true,
     label: "Workflow Editor",
@@ -133,6 +141,7 @@ export const NAV_ITEMS: NavItem[] = [
 
 // Each section uses the shared inner sidebar or supplies its own panel.
 export const INNER_NAV: Record<string, InnerNavData> = {
+  notes: { sections: [], pagePanel: "记事本分类" },
   todos: { sections: [], pagePanel: "待办清单" },
   mail: { sections: [], pagePanel: "邮箱分类" },
   assets: { sections: [], pagePanel: "资产分类" },

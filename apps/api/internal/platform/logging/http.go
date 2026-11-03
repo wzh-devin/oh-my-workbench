@@ -84,6 +84,9 @@ func (w *responseCapture) WriteString(p string) (int, error) { return w.Write([]
 // MetadataOnly marks raw file endpoints even if the client labels a file as JSON.
 func MetadataOnly(c *gin.Context) { c.Set("logging.metadata_only", true); c.Next() }
 
+// SensitiveBody excludes both directions; arbitrary Markdown cannot be redacted by field names.
+func SensitiveBody(c *gin.Context) { c.Set("logging.sensitive_body", true); c.Next() }
+
 // HTTP only observes bytes consumed by handlers; Flush and download methods remain available.
 func HTTP() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -100,8 +103,11 @@ func HTTP() gin.HandlerFunc {
 		}
 		writer := &responseCapture{ResponseWriter: c.Writer}
 		c.Writer = writer
+		sensitiveRoute := c.Request.URL.Path == "/api/notes" || strings.HasPrefix(c.Request.URL.Path, "/api/notes/")
 		var query any = map[string]any{"omitted": "size_limit"}
-		if len(c.Request.URL.RawQuery) <= maxBodyBytes {
+		if sensitiveRoute {
+			query = map[string]any{"omitted": "sensitive_route"}
+		} else if len(c.Request.URL.RawQuery) <= maxBodyBytes {
 			query = queryValues(c.Request.URL.Query())
 		}
 		logger.InfoContext(ctx, "http.request", "started_at", started, "query", query)
@@ -134,6 +140,10 @@ func HTTP() gin.HandlerFunc {
 			}
 			if writer.Header().Get("Content-Disposition") != "" {
 				responseBody = map[string]any{"omitted": "file_response", "bytes": writer.read}
+			}
+			if sensitiveRoute || c.GetBool("logging.sensitive_body") {
+				requestBody = map[string]any{"omitted": "sensitive_body", "bytes": body.read}
+				responseBody = map[string]any{"omitted": "sensitive_body", "bytes": writer.read}
 			}
 			logger.Log(ctx, level, "http.response", "started_at", started, "finished_at", finished,
 				"panic", panicked,

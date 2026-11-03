@@ -12,6 +12,31 @@ type SecurityState struct {
 	PasswordSet bool `json:"passwordSet"`
 }
 
+// VerifyPassword 复用账号密码与现有限流，供敏感业务短期再验证。
+func (s Service) VerifyPassword(ctx context.Context, id int64, current string) error {
+	if n := utf8.RuneCountInString(current); n < 6 || n > 24 {
+		return authdomain.ErrPasswordInput
+	}
+	if err := s.repo.ReservePasswordAttempt(ctx, id); err != nil {
+		return err
+	}
+	user, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if user.Status != authdomain.UserStatusActive {
+		return authdomain.ErrUnauthorized
+	}
+	matches, err := passwordutil.Verify(current, user.Password)
+	if err != nil {
+		return err
+	}
+	if !matches {
+		return authdomain.ErrCurrentPassword
+	}
+	return nil
+}
+
 func (s Service) Security(ctx context.Context, id int64) (SecurityState, error) {
 	user, err := s.repo.GetByID(ctx, id)
 	return SecurityState{PasswordSet: user.Password != ""}, err

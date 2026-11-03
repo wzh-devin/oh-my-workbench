@@ -6,6 +6,7 @@ services:
       - "8080:8080"
     volumes:
       - ${LOGS_PATH:-app_logs}:/app/apps/api/logs
+      - ${NOTES_SECRETS_PATH:-./.secrets}:/app/.secrets:ro
     environment:
       DATABASE_URL: "${DATABASE_URL:-postgres://workbench:workbench@postgres:5432/workbench?sslmode=disable}"
       REDIS_ADDR: "${REDIS_ADDR:-redis:6379}"

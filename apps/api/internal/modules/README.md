@@ -1,6 +1,6 @@
 # 业务模块目录
 
-`assets`、`auth`、`mail`、`settings`、`todos` 采用相同结构，模块根目录只保留说明文档。
+`assets`、`auth`、`mail`、`notes`、`settings`、`todos` 采用相同结构，模块根目录只保留说明文档。
 
 ```text
 <module>/

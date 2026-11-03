@@ -22,6 +22,7 @@ type AuthContextValue = AuthState & {
   refresh: () => Promise<void>
   login: (values: Credentials) => Promise<void>
   logout: () => Promise<void>
+  registerLogoutGuard: (guard: () => Promise<boolean>) => () => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -47,6 +48,14 @@ export function AuthProvider({
   const revision = useRef(0)
   const pending = useRef<AbortController | null>(null)
   const reading = useRef<Promise<void> | null>(null)
+  const logoutGuard = useRef<(() => Promise<boolean>) | null>(null)
+  /** 页面在撤销会话前完成保存；返回 false 时保留会话与编辑状态。 */
+  const registerLogoutGuard = useCallback((guard: () => Promise<boolean>) => {
+    logoutGuard.current = guard
+    return () => {
+      if (logoutGuard.current === guard) logoutGuard.current = null
+    }
+  }, [])
   const refresh = useCallback(() => {
     if (reading.current) return reading.current
     const current = ++revision.current
@@ -122,6 +131,9 @@ export function AuthProvider({
 
   /** 服务端撤销成功才清除当前身份，失败保留页面供重试。 */
   const logout = async () => {
+    if (logoutGuard.current && !(await logoutGuard.current())) {
+      throw new Error("当前修改尚未保存，请保存后退出")
+    }
     reading.current = null
     ++revision.current
     pending.current?.abort()
@@ -134,7 +146,9 @@ export function AuthProvider({
   }
 
   return (
-    <AuthContext.Provider value={{ ...state, refresh, login, logout }}>
+    <AuthContext.Provider
+      value={{ ...state, refresh, login, logout, registerLogoutGuard }}
+    >
       {children}
     </AuthContext.Provider>
   )

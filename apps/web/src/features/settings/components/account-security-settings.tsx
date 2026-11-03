@@ -24,6 +24,7 @@ import { accountSecurityApi, type AccountSecurity } from "../account-security"
 import { SettingGroup } from "./sections/setting-group"
 import { SettingRow } from "./sections/setting-row"
 import { SettingsSection } from "./sections/settings-section"
+import { NotePasskeySettings } from "@/features/notes/components/note-passkey-settings"
 
 const passwordFields = [
   {
@@ -173,7 +174,7 @@ export function AccountSecuritySettings() {
       )}
       <SettingsSection title="账号安全设置">
         <SettingGroup legend="账号安全设置">
-          <SettingRow title="登录密码" last>
+          <SettingRow title="登录密码">
             <div className="flex w-full flex-wrap items-center gap-2">
               {loading ? (
                 <Skeleton className="h-5 w-16" />
@@ -200,6 +201,7 @@ export function AccountSecuritySettings() {
               </Button>
             </div>
           </SettingRow>
+          <NotePasskeySettings />
         </SettingGroup>
       </SettingsSection>
       {error && (

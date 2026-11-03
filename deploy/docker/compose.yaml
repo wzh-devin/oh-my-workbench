@@ -5,6 +5,7 @@ services:
       - "8080:8080"
     volumes:
       - ${LOGS_PATH:-app_logs}:/app/apps/api/logs
+      - ${NOTES_SECRETS_PATH:-./.secrets}:/app/.secrets:ro
     environment:
       DATABASE_URL: "${DATABASE_URL:?Set external DATABASE_URL in the deployment env file}"
       REDIS_ADDR: "${REDIS_ADDR:?Set external REDIS_ADDR in the deployment env file}"

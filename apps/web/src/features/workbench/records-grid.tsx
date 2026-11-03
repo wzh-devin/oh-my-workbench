@@ -66,9 +66,11 @@ export function RecordHint({
         id={id}
         role="tooltip"
         align="start"
-        className="max-h-(--available-height) overflow-y-auto"
+        className="max-h-(--available-height) flex-col items-stretch"
       >
-        <p className="min-w-0 break-words whitespace-pre-wrap">{children}</p>
+        <p className="min-h-0 min-w-0 overflow-y-auto break-words whitespace-pre-wrap">
+          {children}
+        </p>
       </TooltipContent>
     </Tooltip>
   )

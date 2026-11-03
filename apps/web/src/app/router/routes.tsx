@@ -38,6 +38,12 @@ export const routes: RouteObject[] = [
         Component: AppLayout,
         children: [
           {
+            path: "notes",
+            lazy: async () => ({
+              Component: (await import("@/pages/notes")).default,
+            }),
+          },
+          {
             path: "todos",
             lazy: async () => ({
               Component: (await import("@/pages/todos")).default,

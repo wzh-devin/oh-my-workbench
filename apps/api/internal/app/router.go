@@ -16,6 +16,9 @@ import (
 	authservice "github.com/devin/oh-my-workbench/api/internal/modules/auth/service"
 	mailhandler "github.com/devin/oh-my-workbench/api/internal/modules/mail/handler"
 	mailservice "github.com/devin/oh-my-workbench/api/internal/modules/mail/service"
+	notehandler "github.com/devin/oh-my-workbench/api/internal/modules/notes/handler"
+	noterepo "github.com/devin/oh-my-workbench/api/internal/modules/notes/repository"
+	noteservice "github.com/devin/oh-my-workbench/api/internal/modules/notes/service"
 	settingshandler "github.com/devin/oh-my-workbench/api/internal/modules/settings/handler"
 	settingsservice "github.com/devin/oh-my-workbench/api/internal/modules/settings/service"
 	todohandler "github.com/devin/oh-my-workbench/api/internal/modules/todos/handler"
@@ -29,7 +32,8 @@ import (
 )
 
 func newRouter(db *gorm.DB, rdb *redis.Client, mailService *mailservice.Service, proxySettings *settingsservice.ProxyService, systemSettings *settingsservice.SystemService, signingKey string, assetServices ...*assetservice.Service) *gin.Engine {
-	handler := authhandler.NewHandler(authservice.NewService(authrepo.NewRepository(db, rdb), signingKey))
+	accountService := authservice.NewService(authrepo.NewRepository(db, rdb), signingKey)
+	handler := authhandler.NewHandler(accountService)
 	r := gin.New()
 	r.Use(logging.HTTP())
 	_ = r.SetTrustedProxies([]string{"127.0.0.1", "::1"})
@@ -54,6 +58,7 @@ func newRouter(db *gorm.DB, rdb *redis.Client, mailService *mailservice.Service,
 	})
 	handler.RegisterRoutes(api.Group("/auth"))
 	handler.RegisterSecurityRoutes(api.Group("/account/security", handler.RequireSession))
+	notehandler.NewHandler(noteservice.NewService(noterepo.NewRepository(db, rdb), accountService, noteservice.KeyFile)).RegisterRoutes(api.Group("/notes", handler.RequireSession))
 	todoHandler := todohandler.NewHandler(todoservice.NewService(todorepo.NewRepository(db)))
 	todoHandler.RegisterRoutes(api.Group("/todos", handler.RequireSession))
 	workbenchhandler.NewHandler(workbenchservice.NewService(workbenchrepo.NewRepository(db))).RegisterRoutes(api.Group("/workbench", handler.RequireSession))

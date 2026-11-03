@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"strings"
@@ -16,6 +18,12 @@ import (
 )
 
 const cookieName = "omw_session"
+
+// CurrentSessionKey 仅在 RequireSession 之后使用；业务租约不持久化原始凭证。
+func CurrentSessionKey(c *gin.Context) string {
+	digest := sha256.Sum256([]byte(requestToken(c)))
+	return hex.EncodeToString(digest[:])
+}
 
 type Handler struct{ service *authservice.Service }
 

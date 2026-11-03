@@ -121,6 +121,7 @@ desktop.ini
 *.swo
 *~
 *.pem
+/.secrets/
 
 # scaffold leftovers
 .cta.json

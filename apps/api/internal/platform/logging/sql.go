@@ -22,7 +22,7 @@ func sqlParams(sql string, params []any) []any {
 	// Positional arguments carry no field names; hide secret-bearing tables as a unit.
 	sql = strings.ToLower(sql)
 	private := false
-	for _, table := range []string{"omw_user", "omw_mail_account", "omw_system_setting", "omw_asset_connection", "omw_push_subscription"} {
+	for _, table := range []string{"omw_user", "omw_mail_account", "omw_system_setting", "omw_asset_connection", "omw_push_subscription", "omw_note"} {
 		if strings.Contains(sql, table) {
 			private = true
 			break
