@@ -31,6 +31,8 @@ func (s *Service) ready() error {
 	}
 	return nil
 }
+
+func (s *Service) Ready() bool { return s.keys != nil }
 func (s *Service) Notebooks(ctx context.Context, user int64) ([]d.NotebookView, error) {
 	if err := s.ready(); err != nil {
 		return nil, err

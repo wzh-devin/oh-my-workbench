@@ -2,7 +2,9 @@
 
 `domain/handler/service/repository` 沿用其他模块的依赖方向。正文和历史快照只在 service 加解密，Repository 仅持久化密文；元数据可检索，列表不得返回正文。Redis 解锁记录绑定认证会话与 `X-Notes-Context` 的联合摘要，5 分钟过期；前端每次打开生成新的内存上下文，刷新/重开必须验证，当前编辑窗口中的自动保存沿用授权。
 
-从项目根运行 `node scripts/init-notes-key.mjs`，生成被 Git 忽略的 `.secrets/notes-keys.json`，再启动或重启 API。初始化脚本使用独占创建，已有密钥绝不覆盖；缺失/坏密钥只使记事本不可用。API 从 `apps/api` 工作目录读取 `../../.secrets/notes-keys.json`，镜像使用对应的 `/app/.secrets/notes-keys.json` 只读挂载。
+Compose 和发布脚本通过准备容器运行 `flowly-api notes-key-init`，在短事务内检查正文与历史的 key_id：已有密钥只校验，缺失且数据库为空才原子生成；缺失但有数据、格式损坏或旧 key_id 不全则失败。准备容器只对新生成文件设置运行用户 `1001:1001`，已有文件不改写。发布前再由应用用户执行 `flowly-api notes-key-check`，失败不停止旧容器；`GET /api/notes/health` 仅返回 204/503，不包含数据，Docker 健康检查验证实际服务已加载密钥。
+
+本地源码开发从项目根运行 `node scripts/init-notes-key.mjs`，生成被 Git 忽略的 `.secrets/notes-keys.json`，再启动或重启 API。初始化脚本使用独占创建，已有密钥绝不覆盖；缺失/坏密钥只使记事本不可用。API 从 `apps/api` 工作目录读取 `../../.secrets/notes-keys.json`，镜像使用对应的 `/app/.secrets/notes-keys.json` 只读挂载。密钥目录须独立持久化并备份。
 
 keyring 格式为 `{ "active": "key-id", "keys": { "key-id": "Base64 编码的32字节密钥" } }`；最多保留 16 个密钥。密文第一字节为格式版本 1，后接 12 字节随机 nonce 和 GCM 密文/标签，AAD 是 `omw-note:v1:<user_id>:<note_id>`。每个正文/版本单独记录 key_id。换钥先新增 key 并切换 active，再重启所有实例；旧版本仍依赖旧 key，在全部正文和历史迁移或过期前禁止删除旧 key。本期不提供批量重加密命令。
 

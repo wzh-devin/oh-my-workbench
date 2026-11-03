@@ -28,7 +28,7 @@ if [[ ! -f "$deployment_env" ]]; then
   exit 1
 fi
 "${compose[@]}" config --quiet
-image=$("${compose[@]}" config --images)
+image=$("${compose[@]}" config --images | sort -u)
 # Keep the selected daemon when switching to an isolated registry login directory.
 docker_host=${DOCKER_HOST:-$(docker context inspect --format '{{.Endpoints.docker.Host}}')}
 export DOCKER_HOST="$docker_host"
@@ -45,6 +45,9 @@ docker login ghcr.io --username "$registry_user" --password-stdin
 
 "${compose[@]}" pull
 expected_id=$(docker image inspect "$image" --format '{{.Id}}')
+# Refuse missing/corrupt recovery keys before stopping the current application.
+"${compose[@]}" run --rm --no-deps notes-init
+"${compose[@]}" run --rm --no-deps --entrypoint /usr/local/bin/flowly-api app notes-key-check
 "${compose[@]}" down
 "${compose[@]}" up -d --no-build --pull never --wait --wait-timeout 180
 

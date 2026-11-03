@@ -101,7 +101,7 @@ cp -n .env.example .env.local
 
 API 固定监听 `:11990`；应用镜像通过 Nginx 对外提供 `8080`，可用 `18080:8080` 调整宿主机端口。
 
-本地部署连接配置统一放在仓库根目录，进程环境变量优先于 `.env.local`。该文件不应提交到版本库。内部密钥首次启动自动生成并保存到 PostgreSQL，后续启动和多实例共用数据库中的值。
+本地部署连接配置统一放在仓库根目录，进程环境变量优先于 `.env.local`。该文件不应提交到版本库。账号、邮箱等系统内部密钥首次启动自动生成并保存到 PostgreSQL，后续启动和多实例共用数据库中的值。记事本正文密钥独立持久化和备份，见下方「Markdown 记事本」。
 
 ### 3. 启动服务
 
@@ -246,16 +246,19 @@ COOKIE_SECURE=false
 Redis 无密码时留空；HTTPS 部署设置 `COOKIE_SECURE=true`。PostgreSQL 数据库与账号需事先创建。然后只启动应用，跳过内置数据库和 Redis：
 
 ```sh
-docker compose --env-file .env.local up -d --build --no-deps app
+docker compose --env-file .env.local build app
+docker compose --env-file .env.local run --rm --no-deps notes-init
+docker compose --env-file .env.local up -d --no-build --no-deps app
 ```
 
 后续更新也使用这条命令。`.env.local` 必须通过 `--env-file` 显式传入 Compose；已有 shell 环境变量优先。主机名必须能从容器中访问，`127.0.0.1` 指应用容器自身；Docker Desktop 连接宿主机服务可使用 `host.docker.internal`。切换连接不会迁移数据或停止已运行的内置服务；已有部署按需先运行 `docker compose stop postgres redis`，原数据卷会保留。
 
-也可直接运行应用镜像，不需要密钥目录挂载：
+也可直接运行应用镜像；先按下方「Markdown 记事本」初始化独立密钥，并确保容器用户 `1001:1001` 可读：
 
 ```sh
 docker build -t oh-my-workbench:local .
 docker run -d --name oh-my-workbench -p 8080:8080 \
+  -v "$PWD/.secrets:/app/.secrets:ro" \
   -e DATABASE_URL='postgres://user:password@db-host:5432/workbench?sslmode=disable' \
   -e REDIS_ADDR='redis-host:6379' \
   -e COOKIE_SECURE=false \
@@ -278,7 +281,9 @@ Redis 有密码时另传 `REDIS_PASSWORD`。单实例默认 `WORKER_ID=1`，多�
 
 图片使用 `![说明](图片地址)`，支持 HTTP(S) 或相对地址，宽度不超出内容栏，大图等比缩略，点击查看原图。普通 `[文字](地址)` 仍显示为链接。图片不发送页面来源。
 
-首次启用前，从项目根运行：
+Docker Compose 首次启动会通过准备容器初始化独立密钥，发布脚本也会在停止旧容器前执行同样的检查。仅当密钥缺失且数据库没有任何正文或历史版本时才生成；已有文件不覆盖，格式、历史密钥引用或应用读取权限有误均会阻止发布。应用健康检查包含记事本就绪状态。
+
+本地源码开发或手动运行镜像时，首次启用前从项目根运行：
 
 ```bash
 node scripts/init-notes-key.mjs
@@ -286,7 +291,7 @@ node scripts/init-notes-key.mjs
 
 命令独占创建 `.secrets/notes-keys.json`，已有文件不会覆盖，也不会输出密钥。该目录已被 Git 忽略。保留独立备份后启动或重启 API；缺失或损坏的密钥会使记事本拒绝读写，其他模块仍可用。
 
-两个 Compose 文件将 `${NOTES_SECRETS_PATH:-./.secrets}` 只读挂载到 `/app/.secrets`；相对源目录相对于 Compose 文件。部署时将密钥文件放入所选目录，并确保容器 UID/GID `1001:1001` 可读，例如由管理员将目录设为 `0750`、文件设为 `0640`，属组设为 `1001`。部署服务器没有 Node.js 时，可在开发机生成后安全传送到部署目录，不将密钥加入镜像。设置可选的 `NOTES_SECRETS_PATH` 后重建应用容器。
+两个 Compose 文件将 `${NOTES_SECRETS_PATH:-./.secrets}` 持久化到宿主机；相对源目录相对于 Compose 文件。准备容器只在初始化时写入，生成目录和文件归属 `1001:1001`，权限分别为 `0700`、`0600`；日常应用仍以非 root 用户只读挂载 `/app/.secrets`。手动恢复的文件必须保持容器用户可读；恢复时使用原密钥备份，不重新生成。设置可选的 `NOTES_SECRETS_PATH` 后重建应用容器；所有实例必须挂载相同的密钥集合。服务器无需 Node.js，密钥也不会加入镜像。
 
 正文不写入浏览器持久缓存，首版仅搜索标题与标签。加锁笔记导出需重新验证密码，导出文件包含明文。数据库和独立密钥需分开备份，恢复时二者必须匹配；修改登录密码不改变加密密钥。换钥时保留所有仍被正文和历史引用的旧 `key_id`，详见 [记事本模块说明](apps/api/internal/modules/notes/README.md)。服务端仍可解密，本功能不提供端到端加密。
 

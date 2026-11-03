@@ -1,18 +1,20 @@
 services:
   app:
-    image: oh-my-workbench:local
+    image: &app_image oh-my-workbench:local
     build: .
     ports:
       - "8080:8080"
     volumes:
       - ${LOGS_PATH:-app_logs}:/app/apps/api/logs
       - ${NOTES_SECRETS_PATH:-./.secrets}:/app/.secrets:ro
-    environment:
+    environment: &app_environment
       DATABASE_URL: "${DATABASE_URL:-postgres://workbench:workbench@postgres:5432/workbench?sslmode=disable}"
       REDIS_ADDR: "${REDIS_ADDR:-redis:6379}"
       REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
     depends_on:
+      notes-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -33,6 +35,25 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  notes-init:
+    image: *app_image
+    build: .
+    user: "0:0"
+    entrypoint: [/usr/local/bin/flowly-api, notes-key-init]
+    environment: *app_environment
+    volumes:
+      - ${NOTES_SECRETS_PATH:-./.secrets}:/app/.secrets
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      disable: true
+    restart: "no"
 
   postgres:
     image: postgres:17-alpine

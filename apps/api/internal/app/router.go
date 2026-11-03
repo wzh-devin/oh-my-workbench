@@ -58,7 +58,15 @@ func newRouter(db *gorm.DB, rdb *redis.Client, mailService *mailservice.Service,
 	})
 	handler.RegisterRoutes(api.Group("/auth"))
 	handler.RegisterSecurityRoutes(api.Group("/account/security", handler.RequireSession))
-	notehandler.NewHandler(noteservice.NewService(noterepo.NewRepository(db, rdb), accountService, noteservice.KeyFile)).RegisterRoutes(api.Group("/notes", handler.RequireSession))
+	noteService := noteservice.NewService(noterepo.NewRepository(db, rdb), accountService, noteservice.KeyFile)
+	api.GET("/notes/health", func(c *gin.Context) {
+		if !noteService.Ready() {
+			c.Status(http.StatusServiceUnavailable)
+			return
+		}
+		c.Status(http.StatusNoContent)
+	})
+	notehandler.NewHandler(noteService).RegisterRoutes(api.Group("/notes", handler.RequireSession))
 	todoHandler := todohandler.NewHandler(todoservice.NewService(todorepo.NewRepository(db)))
 	todoHandler.RegisterRoutes(api.Group("/todos", handler.RequireSession))
 	workbenchhandler.NewHandler(workbenchservice.NewService(workbenchrepo.NewRepository(db))).RegisterRoutes(api.Group("/workbench", handler.RequireSession))

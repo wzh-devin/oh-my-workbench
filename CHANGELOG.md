@@ -2,7 +2,17 @@
 
 记录个人工作台每个版本中值得关注的变化，最新版本在前。未发布内容归入 `Unreleased`，发布前更新版本号和日期。
 
-## [Unreleased](https://github.com/wzh-devin/oh-my-workbench/compare/v1.1.0...HEAD)
+## [Unreleased](https://github.com/wzh-devin/oh-my-workbench/compare/v1.1.1...HEAD)
+
+## [v1.1.1](https://github.com/wzh-devin/oh-my-workbench/compare/v1.1.0...v1.1.1) - 2026-11-03
+
+### Bug Fixes
+
+- **记事本部署：** 首次部署自动初始化独立密钥，修复上线后笔记本及笔记列表返回 503；已有密钥始终保留，有正文或历史却丢失密钥时禁止重新生成。
+
+### Build System
+
+- **发布检查：** 替换容器前检查密钥格式、历史密钥引用与应用读取权限；健康检查覆盖记事本就绪状态，避免服务可访问但记事本不可用。
 
 ## [v1.1.0](https://github.com/wzh-devin/oh-my-workbench/compare/v1.0.2...v1.1.0) - 2026-11-03
 

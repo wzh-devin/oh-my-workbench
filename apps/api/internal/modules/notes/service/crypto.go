@@ -14,7 +14,7 @@ import (
 	d "github.com/devin/oh-my-workbench/api/internal/modules/notes/domain"
 )
 
-// The keyring is deliberately outside PostgreSQL and never automatically regenerated.
+// The keyring is outside PostgreSQL; only an empty database can initialize a missing file.
 const KeyFile = "../../.secrets/notes-keys.json"
 
 type keyring struct {

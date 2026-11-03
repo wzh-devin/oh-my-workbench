@@ -1,12 +1,12 @@
 services:
   app:
-    image: ghcr.io/wzh-devin/oh-my-workbench:latest
+    image: &app_image ghcr.io/wzh-devin/oh-my-workbench:latest
     ports:
       - "8080:8080"
     volumes:
       - ${LOGS_PATH:-app_logs}:/app/apps/api/logs
       - ${NOTES_SECRETS_PATH:-./.secrets}:/app/.secrets:ro
-    environment:
+    environment: &app_environment
       DATABASE_URL: "${DATABASE_URL:?Set external DATABASE_URL in the deployment env file}"
       REDIS_ADDR: "${REDIS_ADDR:?Set external REDIS_ADDR in the deployment env file}"
       REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
@@ -27,6 +27,22 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  notes-init:
+    image: *app_image
+    profiles: [tools]
+    user: "0:0"
+    entrypoint: [/usr/local/bin/flowly-api, notes-key-init]
+    environment: *app_environment
+    volumes:
+      - ${NOTES_SECRETS_PATH:-./.secrets}:/app/.secrets
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      disable: true
+    restart: "no"
 
 volumes:
   app_logs:
