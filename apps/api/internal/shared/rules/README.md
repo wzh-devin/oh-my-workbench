@@ -186,10 +186,8 @@ Trace 默认关闭；开启后按执行完成顺序记录 matched/unmatched/skip
 在 `apps/api/` 执行：
 
 ```bash
-go test -race ./internal/shared/rules/...
 go vet ./internal/shared/rules/...
-go test ./internal/shared/rules -run '^$' -bench . -benchmem
-go test ./internal/shared/rules/internal/compiler -run '^$' -fuzz '^FuzzCompileAndEvaluate$' -fuzztime 10s -parallel 2
+go build ./internal/shared/rules/...
 ```
 
-基准分别测编译、绑定、执行、Trace、并发与决策集。ns/op 和 allocs/op 只描述对应内核工作负载，不代表业务 API 的 p95/p99。当前规则与数据由本地 JSON 文件管理，持久化、发布版本与业务接入留给独立的上层模块。
+当前规则与数据由本地 JSON 文件管理，持久化、发布版本与业务接入留给独立的上层模块。

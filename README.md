@@ -53,7 +53,7 @@
 | 可视化     | React Flow、Recharts                              |
 | 后端       | Go、Gin、GORM、Goose                              |
 | 数据与存储 | PostgreSQL、Redis、S3 兼容对象存储                |
-| 开发工具   | pnpm workspace、ESLint、Prettier、Vitest、Go test |
+| 开发工具   | pnpm workspace、ESLint、Prettier |
 
 ## 快速开始
 
@@ -169,6 +169,8 @@ apps/
 
 前端页面入口放在 `pages`，业务逻辑放在 `features/<feature>`，跨页面能力放在 `components`、`hooks` 或 `lib`。后端按 `handler → service → repository` 分层，数据库访问集中在 Repository。项目规范见 [AGENTS.md](AGENTS.md)，后端规范见[业务模块目录](apps/api/internal/modules/README.md)。
 
+`apps/*` 和 `packages/*` 的自动化测试均按模块集中放在所属子项目根目录的 `test/`，例如 `apps/api/test/<模块>/xxx_test.go`、`apps/web/test/<模块>/xxx.test.tsx`、`packages/<包名>/test/<模块>/xxx.test.ts`。测试辅助代码、mock、fixtures及测试专用脚本也放在对应 `test/`，与业务源码分开；测试内容按现有规则保留本地、不提交。
+
 ### 常用命令
 
 以下命令均在仓库根目录执行：
@@ -182,14 +184,10 @@ apps/
 | `pnpm start`        | 启动构建后的 API                                      |
 | `pnpm typecheck`    | 前端类型检查与 Go 静态检查                            |
 | `pnpm lint`         | 执行 ESLint 检查                                      |
-| `pnpm test`         | 运行 Vitest 与 Go 测试                                |
-| `pnpm test:watch`   | 以监听模式运行前端测试                                |
 | `pnpm format`       | 格式化应用 TypeScript 与 CSS                          |
 | `pnpm format:check` | 检查应用 TypeScript 与 CSS 格式                       |
 
 Vite 支持前端热更新；Go 开发命令不监听文件变化，修改后端代码、迁移或 API 环境配置后需手动重启。前端连接其他 API 时，可通过进程环境变量 `API_PROXY_TARGET` 指定代理目标。
-
-Go 集成测试使用 `TEST_DATABASE_URL` 和 `TEST_REDIS_ADDR` 指向隔离服务；认证测试会清空指定 Redis 的 database 15，不应使用共享或生产 Redis。测试配置见 [API 开发文档](apps/api/README.md#命令)。
 
 ### 界面组件
 

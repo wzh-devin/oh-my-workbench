@@ -56,8 +56,4 @@ export default defineConfig([
       "react/jsx-no-target-blank": "off",
     },
   },
-  {
-    files: ["**/*.test.{ts,tsx}", "**/test/**"],
-    languageOptions: { globals: globals.vitest },
-  },
 ])

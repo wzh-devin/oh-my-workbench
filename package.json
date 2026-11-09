@@ -13,8 +13,6 @@
     "start": "cd apps/api && ./bin/server",
     "lint": "eslint .",
     "typecheck": "pnpm --filter @workbench/web typecheck && cd apps/api && go vet ./...",
-    "test": "pnpm --filter @workbench/web test && cd apps/api && go test ./...",
-    "test:watch": "pnpm --filter @workbench/web test:watch",
     "format": "prettier --write \"apps/**/*.{ts,tsx,css}\"",
     "format:check": "prettier --check \"apps/**/*.{ts,tsx,css}\"",
     "dev:web": "pnpm --filter @workbench/web dev",

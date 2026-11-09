@@ -79,6 +79,8 @@ Goose 负责执行和版本记录，不根据 GORM 模型生成 SQL。已执行�
 
 ## 命令
 
+Go 测试集中放在 `test/<模块>/xxx_test.go`，与 `internal/`、`cmd/`、`migrations/` 中的业务代码分开。辅助代码和 fixtures 也放在对应测试目录；使用独立测试包，通过被测包的导出接口或 HTTP 入口验证。已有测试用例时，在 `apps/api` 运行 `go test ./test/...`。测试内容按项目规则保留本地、不提交。
+
 | 命令                                  | 用途                             |
 | ------------------------------------- | -------------------------------- |
 | `go run ./cmd/server`                 | 执行待完成迁移并启动服务         |
@@ -86,13 +88,6 @@ Goose 负责执行和版本记录，不根据 GORM 模型生成 SQL。已执行�
 | `./bin/server`                        | 运行构建后的服务                 |
 | `gofmt -w cmd internal migrations`    | 格式化 Go 源码                   |
 | `go vet ./...`                        | 静态检查                         |
-| `go test ./...`                       | 运行测试                         |
-
-本地 PostgreSQL 集成测试通过 `TEST_DATABASE_URL` 指定隔离测试库：
-
-```sh
-TEST_DATABASE_URL=postgres://test:test@127.0.0.1:5432/workbench_test?sslmode=disable TEST_REDIS_ADDR=127.0.0.1:6379 go test -race ./...
-```
 
 ## 目录
 
@@ -138,8 +133,6 @@ API 固定监听 `:11990`；应用镜像通过 Nginx 对外提供 `8080`，例�
 账号安全页仅保留修改密码。`GET /api/account/security` 返回 `data: {"passwordSet": true}`；`POST /api/account/security/password` 接收 `currentPassword`、`newPassword`（均为 6–24 字符），只修改会话所属用户。确认密码由前端校验，不发送到后端。当前密码错误、相同新密码或输入无效返回 400；每用户每 60 秒最多 10 次改密请求，超限返回 429。并发冲突返回 409，重新登录后重试。
 
 密码成功写入时原子增加 `omw_user.session_version`；所有旧 Cookie/Bearer 会话随即失效，当前请求换发 HttpOnly Cookie，并在 `data.token` 返回对应 Bearer 令牌。旧 Redis 会话缺省版本为 0，迁移后首次改密前继续有效；已有用户名、密码摘要及业务数据保持不变。新会话先写入 Redis 的未来版本，再以旧哈希和旧版本比较更新数据库，Redis 失败时不修改密码；未提交的未来会话不通过鉴权。迁移 `20261101190000_password_session_version.sql` 由启动自动执行，部署时所有 API 实例须更新，旧版本不识别会话版本。邮箱验证与 MFA 暂缓，不展示未接通的入口。
-
-认证集成测试额外要求 `TEST_REDIS_ADDR`。测试创建独立 PostgreSQL schema，清空指定 Redis 的 database 15，必须使用隔离测试服务；未提供两个测试变量时跳过认证集成测试。
 
 ## 模块路由与数据库边界
 

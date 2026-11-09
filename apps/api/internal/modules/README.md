@@ -18,8 +18,8 @@
 - 资产 S3/转换器、邮箱 IMAP/Web Push 及 Worker 由 `service/` 管理。后台任务沿用 Service 的生命周期。
 - 每层内部按业务职责命名，如 `repository/entries.go`、`repository/uploads.go`、`service/body_cache.go`；不再重复目录名作为文件前缀。
 - 系统配置统一存入 `omw_system_setting`，由 `settings/repository/settings.go` 按用户和键存取；具体配置的校验、编码和加密留在消费方，代理业务与邮箱租约事务使用同模块的 `proxy.go`。
-- 测试跟随所属层；跨层场景仍通过真实 Handler 和 Service 验证。测试文件沿用项目规则，仅保留本地。
+- 测试统一放在 `apps/api/test/<模块>/`，测试辅助代码和 fixtures 也集中在该目录；通过导出接口或 HTTP 入口验证，不在业务层目录散放测试文件，不为测试专门开放私有实现。
 
 新增业务模块沿用此结构，在 `internal/app` 显式组装和挂载，不新增注册框架或根目录类型别名。
 
-从 `apps/api` 运行 `go test ./...`、`go vet ./...`、`go build ./...`。本地架构测试检查目录、依赖方向和数据库访问边界。
+从 `apps/api` 运行 `go vet ./...`、`go build ./...`。

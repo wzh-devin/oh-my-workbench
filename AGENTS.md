@@ -4,6 +4,7 @@
 3. 不要自己主观臆测新增git工作树
 4. 删除多余的标语、说明文字和次要标签。如果删除完界面就看不懂，说明布局本身就有问题，需要重新设计。
 5. 每次修改都需要兼顾用户体验、开发体验和 AI Agent 的使用体验，三个都要变好，而且不能破坏现有功能。
+6. `apps/*` 和 `packages/*` 的自动化测试均集中放在所属子项目根目录的 `test/<模块>/`，例如 `apps/api/test/<模块>/xxx_test.go`、`apps/web/test/<模块>/xxx.test.tsx`、`packages/<包名>/test/<模块>/xxx.test.ts`；测试辅助代码、mock、fixtures及测试专用脚本也放在对应 `test/` 内。禁止在业务源码中散放测试文件，禁止另建并存的 `tests/` 或 `__tests__/`。Go 测试通过导出接口或 HTTP 入口验证，不为测试搬动业务源码或专门开放私有实现。测试文件继续保留本地、不提交；业务试运行功能不属于自动化测试。
 
 前端源码位于 `apps/web/src/`；下文的 `components/ui`、`components/reui` 等源码路径均相对此目录。ReUI/shadcn CLI 从 `apps/web/` 运行。
 
