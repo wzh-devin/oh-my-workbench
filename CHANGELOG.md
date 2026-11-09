@@ -2,20 +2,22 @@
 
 记录个人工作台每个版本中值得关注的变化，最新版本在前。未发布内容归入 `Unreleased`，发布前更新版本号和日期。
 
-## [Unreleased](https://github.com/wzh-devin/oh-my-workbench/compare/v1.1.1...HEAD)
+## [Unreleased](https://github.com/wzh-devin/oh-my-workbench/compare/v1.1.2...HEAD)
+
+## [v1.1.2](https://github.com/wzh-devin/oh-my-workbench/compare/v1.1.1...v1.1.2) - 2026-11-09
 
 ### Code Refactoring
 
-- **后端：** 按 router、service、repository 和 domain 集中职责，表结构与查询按表维护，统一 Request/Response 命名，并将通用 S3 服务独立维护，保留现有 HTTP 接口与数据格式。
+- **后端：** 按 router、service、repository 和 domain 集中职责，表结构与查询按表维护，统一 Request/Response 命名，并将通用 S3 服务独立维护，保留现有 HTTP 接口与数据格式。 ([f0fc64c](https://github.com/wzh-devin/oh-my-workbench/commit/f0fc64c3eb6492d234608339972360adc5d84c70))
 
 ### Bug Fixes
 
-- **记事本：** 加密密钥统一存入系统设置表，空库首次启动自动初始化，重启和多实例复用；已有正文与历史版本使用原密钥迁入，不再依赖项目目录中的密钥文件。
-- **部署：** 升级时在切换服务前迁移并验证原密钥，新版本健康后清理旧文件；迁移或预检失败保留旧服务，并修正发布镜像标签渲染。
+- **记事本：** 加密密钥统一存入系统设置表，空库首次启动自动初始化，重启和多实例复用；已有正文与历史版本使用原密钥迁入，不再依赖项目目录中的密钥文件。 ([f0fc64c](https://github.com/wzh-devin/oh-my-workbench/commit/f0fc64c3eb6492d234608339972360adc5d84c70))
+- **部署：** 升级时在切换服务前迁移并验证原密钥，新版本健康后清理旧文件；迁移或预检失败保留旧服务，并修正发布镜像标签渲染。 ([f0fc64c](https://github.com/wzh-devin/oh-my-workbench/commit/f0fc64c3eb6492d234608339972360adc5d84c70))
 
 ### BREAKING CHANGES
 
-- **记事本升级：** 停用独立密钥初始化脚本和 `notes-key-init` 命令；发布脚本自动迁移旧容器中的原密钥，源码或手动镜像升级需先通过 `notes-key-import` 标准输入导入原 keyring。
+- **记事本升级：** 停用独立密钥初始化脚本和 `notes-key-init` 命令；发布脚本自动迁移旧容器中的原密钥，源码或手动镜像升级需先通过 `notes-key-import` 标准输入导入原 keyring。 ([f0fc64c](https://github.com/wzh-devin/oh-my-workbench/commit/f0fc64c3eb6492d234608339972360adc5d84c70))
 
 ## [v1.1.1](https://github.com/wzh-devin/oh-my-workbench/compare/v1.1.0...v1.1.1) - 2026-11-03
 
