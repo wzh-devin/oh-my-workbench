@@ -46,7 +46,7 @@ fi
 target="$DEPLOY_USER@$DEPLOY_HOST"
 
 mkdir "$ssh_dir/release"
-sed "s|^    image: &app_image .*|    image: \&app_image $APP_IMAGE|" deploy/docker/compose.yaml > "$ssh_dir/release/compose.yaml"
+sed "s|^    image: .*|    image: $APP_IMAGE|" deploy/docker/compose.yaml > "$ssh_dir/release/compose.yaml"
 cp deploy/docker/deploy.sh "$ssh_dir/release/deploy.sh"
 printf -v remote_path '%q' "$DEPLOY_PATH"
 tar -C "$ssh_dir/release" -cf - compose.yaml deploy.sh |

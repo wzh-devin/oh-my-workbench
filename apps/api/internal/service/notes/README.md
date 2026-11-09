@@ -1,0 +1,27 @@
+# 记事本
+
+`internal/router/notes` 处理 HTTP，`internal/service/notes` 处理业务，`internal/repository/note*.go` 集中表结构和查询；请求、响应和内部数据按职责放在 `internal/domain`。正文和历史快照只在 service 加解密，Repository 仅持久化密文；元数据可检索，列表不得返回正文。Redis 解锁记录绑定认证会话与 `X-Notes-Context` 的联合摘要，5 分钟过期；前端每次打开生成新的内存上下文，刷新/重开必须验证，当前编辑窗口中的自动保存沿用授权。
+
+密钥统一保存在 `omw_system_setting`（`user_id=0/key=notes.keyring`）。Service 生成、校验和使用密钥，Repository 在事务内串行初始化并核对正文及历史的 key_id。仅全新空库缺少记录时自动生成；重启和多实例复用同一记录。缺钥但有数据、格式损坏或旧 key_id 不全时启动失败，不覆盖坏配置，不生成替代密钥。运行期不读取或创建密钥文件，也不需要专用挂载。
+
+旧版升级通过 `flowly-api notes-key-import` 从标准输入导入原 keyring；源码从 `apps/api` 运行 `go run ./cmd/server notes-key-import < ../../.secrets/notes-keys.json`。导入不打印密钥，在同一事务内流式验证全部正文和历史密文，解密失败即回滚。已有不同密钥拒绝覆盖；相同密钥重复导入不改写。先完成导入验证，再移除旧文件。
+
+发布脚本发现旧容器存在 `/app/.secrets` 挂载时，先临时只读挂载到迁移命令并导入原keyring；成功前不切换服务，新版本健康后再认证并清理旧文件。正常运行的Compose不含密钥挂载，也不会生成文件。发布脚本在停止旧容器前执行 `flowly-api notes-key-check`，只依赖数据库：空库初始化、已有记录严格校验。`GET /api/notes/health` 返回 204/503，Docker 健康检查验证实际服务就绪。
+
+keyring 格式为 `{ "active": "key-id", "keys": { "key-id": "Base64 编码的32字节密钥" } }`；最多保留 16 个密钥。密文第一字节为格式版本 1，后接 12 字节随机 nonce 和 GCM 密文/标签，AAD 是 `omw-note:v1:<user_id>:<note_id>`。每个正文/版本单独记录 key_id。换钥先新增 key 并切换 active，再重启所有实例；旧版本仍依赖旧 key，在全部正文和历史迁移或过期前禁止删除旧 key。本期不提供批量重加密命令。
+
+数据库备份须同时包含笔记数据和 `notes.keyring` 系统记录；数据库完整泄露也会泄露解密密钥。改登录密码不更改加密密钥；旧会话解锁租约随认证失效而不可用。加密不保护服务器本身失陷，也不隐藏标题、标签、分类与时间。删除数据不删除历史备份。
+
+保存持有用户事务锁以串行化分类删除和笔记保存；版本号 CAS 防止多标签页覆盖，新建 requestId 在用户范围幂等。历史按变化保存前一版本，间隔 30 秒、最多 50 个；恢复前强制保留当前版本。分页用同一只读快照计数，查询不读取密文，规则先由通用引擎校验后递归生成参数化 SQL。
+
+记事本 HTTP 请求/响应/查询参数与 SQL 参数均不落日志。不得将正文添加到公共工作台缓存、localStorage、IndexedDB、遥测或 AI 默认上下文。
+
+## 访问与视图契约
+
+- `GET /:id/metadata` 只返回所属用户的元数据，不读取密文；创建加锁笔记立即落库，修改已有加锁笔记仍须有效授权。详情、历史、修改和导出都使用同一上下文。
+- `GET /views`、`POST /views/save|update|delete` 持久化用户视图，规则保留嵌套 AND/OR/NOT；用户事务锁和 version CAS 保护修改与最后一个视图。全部笔记/回收站为系统入口，不参与删除。
+- `POST /passkeys/status`、`/register/begin|finish`、`/login/begin|finish`、`/delete`：严格校验浏览器 Origin 与 Host，HTTPS 或本地开发回环；挑战绑定用户、访问上下文、origin 和用途，Redis 2 分钟且只能消费一次。
+- 绑定和撤销需登录密码；登录由 WebAuthn 库验证签名、RP/origin、用户验证和计数器后授予当前编辑上下文。每个用户/RP 一份凭据；撤销保留版本墓碑以拒绝旧挑战。客户端不会上传指纹。
+- 元数据及状态可在未解锁时读取；缺少授权返回 423，版本冲突 409，验证失败 400，频率限制 429。绑定不授予笔记正文权限。
+
+通行密钥依赖浏览器和系统验证器支持，系统可以使用 Touch ID 或设备密码。部署切换域名需要重新绑定；移除仅撤销本站公钥，不修改设备钥匙串。新增迁移只增加视图与通行密钥表，回滚 Down 会删除这两类新增配置，笔记正文表保持不变。

@@ -59,7 +59,7 @@ Goose 自动创建 `goose_db_version` 并记录已执行版本，重复启动只
 
 ### 新增表或字段
 
-1. 修改对应业务模块（如 `internal/modules/auth/domain/model.go`）中的 GORM 模型。
+1. 修改对应业务模块（如 `internal/repository/user.go`）中的 GORM 模型。
 2. 在 `migrations/` 新增时间戳命名的 SQL 文件，例如 `20261029120000_add_user_avatar.sql`。
 3. 编写并审查 SQL，在隔离数据库验证后随代码保留。
 4. 启动服务，Goose 自动应用未完成的迁移。
@@ -96,15 +96,14 @@ cmd/server/main.go          程序入口
 internal/
   app/                      启动编排、依赖组装、总路由
   config/                   应用配置
-  modules/
-    auth/                   认证：管理员初始化、登录和会话
-    todos/                  待办：清单、步骤、日期、标签、来源和旧数据导入
-    mail/                   邮箱：账号、只读收信、通知、推送和后台监听
-    assets/                 资产：连接、目录、上传、预览和后台恢复
-    <module>/domain/        模型、输入输出、错误和共用纯规则
-    <module>/handler/       HTTP 接口与 routes.go
-    <module>/service/       业务编排、外部服务与后台任务
-    <module>/repository/    数据库访问、查询和事务
+  router/<module>/          路由注册与 HTTP 请求处理
+  service/<module>/         业务编排、外部协议与后台任务
+  service/s3/               可复用的对象存储能力
+  repository/               每表的结构、TableName、查询与事务
+  domain/<module>/          跨层共用的纯业务规则与错误
+  domain/req/<module>/      请求参数
+  domain/resp/<module>/     响应参数与公开字段
+  domain/dto/<module>/      内部传递的数据、缓存载荷和配置
   platform/
     database/               PostgreSQL 连接
     cache/                  Redis 连接
@@ -114,7 +113,7 @@ migrations/
   *.sql                     版本化 SQL
 ```
 
-模块职责与依赖规范见 [业务模块目录](internal/modules/README.md)。
+模块职责与依赖规范见 [后端目录与职责](internal/README.md)。
 
 参考：[Goose](https://github.com/pressly/goose)、[Goose Provider 与 PostgreSQL 锁](https://pressly.github.io/goose/documentation/provider/)。
 

@@ -130,9 +130,9 @@ API 启动时自动执行 Goose 数据库迁移，无需单独安装迁移 CLI�
 
 在资产页面添加 S3 / MinIO 连接，填写 Endpoint、已有 Bucket、Region、访问凭证和管理前缀。工作台不会自动创建 Bucket，连接账号需具备对应前缀的对象读写与分片上传权限。
 
-填写连接的“公开访问端点”后，API 鉴权并签发15分钟链接，由浏览器直接从私有存储预览和下载；原图在链接有效期内复用浏览器缓存。留空继续由工作台转发。支持路径和虚拟主机寻址，其他存储按其 S3 兼容接口配置；跨域 PDF/文本预览需配置 CORS，详见[签名分发配置](apps/api/internal/modules/assets/README.md#私有文件签名分发)。
+填写连接的“公开访问端点”后，API 鉴权并签发15分钟链接，由浏览器直接从私有存储预览和下载；原图在链接有效期内复用浏览器缓存。留空继续由工作台转发。支持路径和虚拟主机寻址，其他存储按其 S3 兼容接口配置；跨域 PDF/文本预览需配置 CORS，详见[签名分发配置](apps/api/internal/service/assets/README.md#私有文件签名分发)。
 
-应用镜像已内置 Office 预览与缩略图服务，默认地址无需修改。本地开发或手动部署可使用[独立预览 Compose 配置](apps/api/deploy/gotenberg/compose.yaml)，并在“设置 → 通用”填写 API 可访问的转换服务地址；具体方法见[资产服务配置](apps/api/internal/modules/assets/README.md#连接与运行)。未部署转换服务时，文件仍可上传和下载。
+应用镜像已内置 Office 预览与缩略图服务，默认地址无需修改。本地开发或手动部署可使用[独立预览 Compose 配置](apps/api/deploy/gotenberg/compose.yaml)，并在“设置 → 通用”填写 API 可访问的转换服务地址；具体方法见[资产服务配置](apps/api/internal/service/assets/README.md#连接与运行)。未部署转换服务时，文件仍可上传和下载。
 
 ### 网络代理
 
@@ -160,14 +160,17 @@ apps/
     internal/
       app/             启动、依赖组装与总路由
       config/          环境配置
-      modules/         auth、todos、mail、assets、settings 业务模块
+      router/          auth、todos、mail、assets、notes、settings、workbench HTTP 接口
+      service/         业务服务与通用 S3
+      repository/      按表集中模型和数据库操作
+      domain/          纯业务规则与 req、resp、dto
       platform/        数据库、缓存与出站网络
       shared/          通用规则、认证与响应工具
     migrations/        嵌入式 SQL 迁移
     deploy/            文件转换服务部署配置
 ```
 
-前端页面入口放在 `pages`，业务逻辑放在 `features/<feature>`，跨页面能力放在 `components`、`hooks` 或 `lib`。后端按 `handler → service → repository` 分层，数据库访问集中在 Repository。项目规范见 [AGENTS.md](AGENTS.md)，后端规范见[业务模块目录](apps/api/internal/modules/README.md)。
+前端页面入口放在 `pages`，业务逻辑放在 `features/<feature>`，跨页面能力放在 `components`、`hooks` 或 `lib`。后端按 `router → service → repository` 分层，数据库访问集中在 Repository。项目规范见 [AGENTS.md](AGENTS.md)，后端规范见[后端目录与职责](apps/api/internal/README.md)。
 
 `apps/*` 和 `packages/*` 的自动化测试均按模块集中放在所属子项目根目录的 `test/`，例如 `apps/api/test/<模块>/xxx_test.go`、`apps/web/test/<模块>/xxx.test.tsx`、`packages/<包名>/test/<模块>/xxx.test.ts`。测试辅助代码、mock、fixtures及测试专用脚本也放在对应 `test/`，与业务源码分开；测试内容按现有规则保留本地、不提交。
 
@@ -245,18 +248,17 @@ Redis 无密码时留空；HTTPS 部署设置 `COOKIE_SECURE=true`。PostgreSQL 
 
 ```sh
 docker compose --env-file .env.local build app
-docker compose --env-file .env.local run --rm --no-deps notes-init
+docker compose --env-file .env.local run --rm --no-deps --entrypoint /usr/local/bin/flowly-api app notes-key-check
 docker compose --env-file .env.local up -d --no-build --no-deps app
 ```
 
 后续更新也使用这条命令。`.env.local` 必须通过 `--env-file` 显式传入 Compose；已有 shell 环境变量优先。主机名必须能从容器中访问，`127.0.0.1` 指应用容器自身；Docker Desktop 连接宿主机服务可使用 `host.docker.internal`。切换连接不会迁移数据或停止已运行的内置服务；已有部署按需先运行 `docker compose stop postgres redis`，原数据卷会保留。
 
-也可直接运行应用镜像；先按下方「Markdown 记事本」初始化独立密钥，并确保容器用户 `1001:1001` 可读：
+也可直接运行应用镜像；系统密钥会在空库首次启动时自动入库，旧版升级按下方「Markdown 记事本」导入原密钥：
 
 ```sh
 docker build -t oh-my-workbench:local .
 docker run -d --name oh-my-workbench -p 8080:8080 \
-  -v "$PWD/.secrets:/app/.secrets:ro" \
   -e DATABASE_URL='postgres://user:password@db-host:5432/workbench?sslmode=disable' \
   -e REDIS_ADDR='redis-host:6379' \
   -e COOKIE_SECURE=false \
@@ -279,19 +281,25 @@ Redis 有密码时另传 `REDIS_PASSWORD`。单实例默认 `WORKER_ID=1`，多�
 
 图片使用 `![说明](图片地址)`，支持 HTTP(S) 或相对地址，宽度不超出内容栏，大图等比缩略，点击查看原图。普通 `[文字](地址)` 仍显示为链接。图片不发送页面来源。
 
-Docker Compose 首次启动会通过准备容器初始化独立密钥，发布脚本也会在停止旧容器前执行同样的检查。仅当密钥缺失且数据库没有任何正文或历史版本时才生成；已有文件不覆盖，格式、历史密钥引用或应用读取权限有误均会阻止发布。应用健康检查包含记事本就绪状态。
+笔记密钥统一保存在 `omw_system_setting` 的系统作用域记录 `notes.keyring` 中。全新空库首次启动自动生成，重启与多实例复用数据库中的同一套密钥，无需本地密钥文件或专用挂载。已有正文或历史版本但缺失密钥、密钥损坏或缺少引用的旧密钥时，启动及发布预检会失败，禁止生成替代密钥。
 
-本地源码开发或手动运行镜像时，首次启用前从项目根运行：
+发布脚本升级已有部署时，会从旧容器现有挂载中一次性导入原密钥，验证全部正文与历史成功后才切换服务；新版本健康后再次复核并清理旧文件。后续运行不需要该文件或挂载。
+
+源码运行或手动镜像部署从旧版升级时，先导入原文件。源码从 `apps/api` 执行：
 
 ```bash
-node scripts/init-notes-key.mjs
+go run ./cmd/server notes-key-import < ../../.secrets/notes-keys.json
 ```
 
-命令独占创建 `.secrets/notes-keys.json`，已有文件不会覆盖，也不会输出密钥。该目录已被 Git 忽略。保留独立备份后启动或重启 API；缺失或损坏的密钥会使记事本拒绝读写，其他模块仍可用。
+镜像部署在 `deploy/docker` 目录执行（原文件路径按实际位置填写）：
 
-两个 Compose 文件将 `${NOTES_SECRETS_PATH:-./.secrets}` 持久化到宿主机；相对源目录相对于 Compose 文件。准备容器只在初始化时写入，生成目录和文件归属 `1001:1001`，权限分别为 `0700`、`0600`；日常应用仍以非 root 用户只读挂载 `/app/.secrets`。手动恢复的文件必须保持容器用户可读；恢复时使用原密钥备份，不重新生成。设置可选的 `NOTES_SECRETS_PATH` 后重建应用容器；所有实例必须挂载相同的密钥集合。服务器无需 Node.js，密钥也不会加入镜像。
+```bash
+docker compose --env-file .env -f compose.yaml run --rm --no-deps -T --entrypoint /usr/local/bin/flowly-api app notes-key-import < /path/to/original/notes-keys.json
+```
 
-正文不写入浏览器持久缓存，首版仅搜索标题与标签。加锁笔记导出需重新验证密码，导出文件包含明文。数据库和独立密钥需分开备份，恢复时二者必须匹配；修改登录密码不改变加密密钥。换钥时保留所有仍被正文和历史引用的旧 `key_id`，详见 [记事本模块说明](apps/api/internal/modules/notes/README.md)。服务端仍可解密，本功能不提供端到端加密。
+导入通过标准输入读取原密钥，事务内验证所有正文和历史版本能解密；不同的数据库已有密钥不会被覆盖。重复导入相同密钥不改写数据。导入并验证成功后，旧文件不再参与运行。发布预检或迁移失败时不停止旧服务，健康检查包含记事本就绪状态。
+
+正文不写入浏览器持久缓存，首版仅搜索标题与标签。加锁笔记导出需重新验证密码，导出文件包含明文。数据库备份须包含系统设置中的密钥记录；数据库完整泄露也会泄露解密密钥。修改登录密码不改变加密密钥。换钥时保留所有仍被正文和历史引用的旧 `key_id`，详见 [记事本模块说明](apps/api/internal/service/notes/README.md)。服务端仍可解密，本功能不提供端到端加密。
 
 ### 文件日志
 
@@ -435,7 +443,7 @@ pnpm build
 pnpm start
 ```
 
-Go 服务只提供 API。手动部署时还需要托管 `apps/web/dist`、配置 SPA 回退和同域 `/api` 代理，并按[资产配置说明](apps/api/internal/modules/assets/README.md#连接与运行)部署文件转换服务。生产 HTTPS 使用 `COOKIE_SECURE=true`；在公开访问前完成管理员初始化。
+Go 服务只提供 API。手动部署时还需要托管 `apps/web/dist`、配置 SPA 回退和同域 `/api` 代理，并按[资产配置说明](apps/api/internal/service/assets/README.md#连接与运行)部署文件转换服务。生产 HTTPS 使用 `COOKIE_SECURE=true`；在公开访问前完成管理员初始化。
 
 `pnpm start` 以 `apps/api` 为工作目录。直接运行二进制时，也需使用该工作目录，以正确读取根目录 `.env.local`。
 
@@ -444,8 +452,8 @@ Go 服务只提供 API。手动部署时还需要托管 `apps/web/dist`、配置
 - [更新日志模板与发布检查](.github/CHANGELOG_TEMPLATE.md)
 - [环境变量示例](.env.example)
 - [API 启动、数据库迁移与邮箱配置](apps/api/README.md)
-- [后端业务模块规范](apps/api/internal/modules/README.md)
-- [资产配置、文件预览与运行维护](apps/api/internal/modules/assets/README.md)
+- [后端业务模块规范](apps/api/internal/README.md)
+- [资产配置、文件预览与运行维护](apps/api/internal/service/assets/README.md)
 - [通用规则引擎](apps/api/internal/shared/rules/README.md)
 - [项目开发规范](AGENTS.md)
 

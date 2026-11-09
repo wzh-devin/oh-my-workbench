@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/devin/oh-my-workbench/api/internal/app"
-	noteservice "github.com/devin/oh-my-workbench/api/internal/modules/notes/service"
 	"github.com/devin/oh-my-workbench/api/internal/platform/logging"
 )
 
@@ -13,10 +12,10 @@ func main() {
 	if len(os.Args) > 1 {
 		var err error
 		switch os.Args[1] {
-		case "notes-key-init":
-			err = app.PrepareNotesKeys()
+		case "notes-key-import":
+			err = app.PrepareNotesKeys(os.Stdin)
 		case "notes-key-check":
-			err = noteservice.CheckKeys(noteservice.KeyFile, nil)
+			err = app.PrepareNotesKeys(nil)
 		default:
 			err = fmt.Errorf("未知命令: %s", os.Args[1])
 		}
