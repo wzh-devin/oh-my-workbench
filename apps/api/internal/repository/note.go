@@ -62,27 +62,6 @@ func (r *NoteRepository) PrepareKeys(ctx context.Context, prepare func(*Store, [
 	})
 }
 
-// VerifyKeys streams current bodies and history through the service decryptor during import.
-func (r *NoteRepository) VerifyKeys(ctx context.Context, verify func(int64, int64, string, []byte) error) error {
-	rows, err := r.db.WithContext(ctx).Raw("SELECT user_id,id,key_id,body_ciphertext FROM omw_note UNION ALL SELECT user_id,note_id,key_id,body_ciphertext FROM omw_note_revision").Rows()
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var user, note int64
-		var keyID string
-		var ciphertext []byte
-		if err := rows.Scan(&user, &note, &keyID, &ciphertext); err != nil {
-			return err
-		}
-		if err := verify(user, note, keyID, ciphertext); err != nil {
-			return err
-		}
-	}
-	return rows.Err()
-}
-
 func (r *NoteRepository) Metadata(ctx context.Context, user, id int64) (Note, error) {
 	var out Note
 	err := r.db.WithContext(ctx).Select("id,user_id,notebook_id,title,tags,requires_unlock,favorite,diary_date,version,created_at,updated_at,deleted_at").Where("user_id=? AND id=?", user, id).First(&out).Error

@@ -23,7 +23,7 @@ type Service struct {
 }
 
 func NewService(ctx context.Context, repository *repository.Store, auth *authservice.Service) (*Service, error) {
-	keys, err := prepareKeys(ctx, repository, nil)
+	keys, err := prepareKeys(ctx, repository)
 	if err != nil {
 		return nil, err
 	}

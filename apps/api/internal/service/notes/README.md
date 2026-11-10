@@ -4,9 +4,7 @@
 
 密钥统一保存在 `omw_system_setting`（`user_id=0/key=notes.keyring`）。Service 生成、校验和使用密钥，Repository 在事务内串行初始化并核对正文及历史的 key_id。仅全新空库缺少记录时自动生成；重启和多实例复用同一记录。缺钥但有数据、格式损坏或旧 key_id 不全时启动失败，不覆盖坏配置，不生成替代密钥。运行期不读取或创建密钥文件，也不需要专用挂载。
 
-旧版升级通过 `flowly-api notes-key-import` 从标准输入导入原 keyring；源码从 `apps/api` 运行 `go run ./cmd/server notes-key-import < ../../.secrets/notes-keys.json`。导入不打印密钥，在同一事务内流式验证全部正文和历史密文，解密失败即回滚。已有不同密钥拒绝覆盖；相同密钥重复导入不改写。先完成导入验证，再移除旧文件。
-
-发布脚本发现旧容器存在 `/app/.secrets` 挂载时，先临时只读挂载到迁移命令并导入原keyring；成功前不切换服务，新版本健康后再认证并清理旧文件。正常运行的Compose不含密钥挂载，也不会生成文件。发布脚本在停止旧容器前执行 `flowly-api notes-key-check`，只依赖数据库：空库初始化、已有记录严格校验。`GET /api/notes/health` 返回 204/503，Docker 健康检查验证实际服务就绪。
+发布脚本在停止旧容器前执行 `flowly-api notes-key-check`，直接使用数据库：空库初始化、已有记录严格校验，失败保留旧服务。`GET /api/notes/health` 返回 204/503，Docker 健康检查验证实际服务就绪。
 
 keyring 格式为 `{ "active": "key-id", "keys": { "key-id": "Base64 编码的32字节密钥" } }`；最多保留 16 个密钥。密文第一字节为格式版本 1，后接 12 字节随机 nonce 和 GCM 密文/标签，AAD 是 `omw-note:v1:<user_id>:<note_id>`。每个正文/版本单独记录 key_id。换钥先新增 key 并切换 active，再重启所有实例；旧版本仍依赖旧 key，在全部正文和历史迁移或过期前禁止删除旧 key。本期不提供批量重加密命令。
 

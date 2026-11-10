@@ -12,10 +12,8 @@ func main() {
 	if len(os.Args) > 1 {
 		var err error
 		switch os.Args[1] {
-		case "notes-key-import":
-			err = app.PrepareNotesKeys(os.Stdin)
 		case "notes-key-check":
-			err = app.PrepareNotesKeys(nil)
+			err = app.PrepareNotesKeys()
 		default:
 			err = fmt.Errorf("未知命令: %s", os.Args[1])
 		}

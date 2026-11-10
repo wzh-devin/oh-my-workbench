@@ -254,7 +254,7 @@ docker compose --env-file .env.local up -d --no-build --no-deps app
 
 后续更新也使用这条命令。`.env.local` 必须通过 `--env-file` 显式传入 Compose；已有 shell 环境变量优先。主机名必须能从容器中访问，`127.0.0.1` 指应用容器自身；Docker Desktop 连接宿主机服务可使用 `host.docker.internal`。切换连接不会迁移数据或停止已运行的内置服务；已有部署按需先运行 `docker compose stop postgres redis`，原数据卷会保留。
 
-也可直接运行应用镜像；系统密钥会在空库首次启动时自动入库，旧版升级按下方「Markdown 记事本」导入原密钥：
+也可直接运行应用镜像；系统密钥会在空库首次启动时自动入库：
 
 ```sh
 docker build -t oh-my-workbench:local .
@@ -283,21 +283,7 @@ Redis 有密码时另传 `REDIS_PASSWORD`。单实例默认 `WORKER_ID=1`，多�
 
 笔记密钥统一保存在 `omw_system_setting` 的系统作用域记录 `notes.keyring` 中。全新空库首次启动自动生成，重启与多实例复用数据库中的同一套密钥，无需本地密钥文件或专用挂载。已有正文或历史版本但缺失密钥、密钥损坏或缺少引用的旧密钥时，启动及发布预检会失败，禁止生成替代密钥。
 
-发布脚本升级已有部署时，会从旧容器现有挂载中一次性导入原密钥，验证全部正文与历史成功后才切换服务；新版本健康后再次复核并清理旧文件。后续运行不需要该文件或挂载。
-
-源码运行或手动镜像部署从旧版升级时，先导入原文件。源码从 `apps/api` 执行：
-
-```bash
-go run ./cmd/server notes-key-import < ../../.secrets/notes-keys.json
-```
-
-镜像部署在 `deploy/docker` 目录执行（原文件路径按实际位置填写）：
-
-```bash
-docker compose --env-file .env -f compose.yaml run --rm --no-deps -T --entrypoint /usr/local/bin/flowly-api app notes-key-import < /path/to/original/notes-keys.json
-```
-
-导入通过标准输入读取原密钥，事务内验证所有正文和历史版本能解密；不同的数据库已有密钥不会被覆盖。重复导入相同密钥不改写数据。导入并验证成功后，旧文件不再参与运行。发布预检或迁移失败时不停止旧服务，健康检查包含记事本就绪状态。
+发布脚本在停止旧服务前检查数据库中的笔记密钥，预检失败会保留旧服务；容器健康检查包含记事本就绪状态。
 
 正文不写入浏览器持久缓存，首版仅搜索标题与标签。加锁笔记导出需重新验证密码，导出文件包含明文。数据库备份须包含系统设置中的密钥记录；数据库完整泄露也会泄露解密密钥。修改登录密码不改变加密密钥。换钥时保留所有仍被正文和历史引用的旧 `key_id`，详见 [记事本模块说明](apps/api/internal/service/notes/README.md)。服务端仍可解密，本功能不提供端到端加密。
 

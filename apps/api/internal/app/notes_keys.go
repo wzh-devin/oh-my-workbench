@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"io"
 	"time"
 
 	"github.com/devin/oh-my-workbench/api/internal/config"
@@ -13,8 +12,8 @@ import (
 	"github.com/devin/oh-my-workbench/api/migrations"
 )
 
-// PrepareNotesKeys validates database keys, or imports an original keyring from standard input.
-func PrepareNotesKeys(input io.Reader) error {
+// PrepareNotesKeys initializes an empty database's keys and validates persisted key references.
+func PrepareNotesKeys() error {
 	conf := config.Get()
 	db, pool, err := database.InitDatabase(&conf)
 	if err != nil {
@@ -27,8 +26,5 @@ func PrepareNotesKeys(input io.Reader) error {
 		return errors.New("记事本密钥预检无法完成数据库迁移，请检查数据库状态")
 	}
 	repos := repository.New(db, nil)
-	if input != nil {
-		return noteservice.ImportKeys(ctx, repos, input)
-	}
 	return noteservice.PrepareKeys(ctx, repos)
 }
