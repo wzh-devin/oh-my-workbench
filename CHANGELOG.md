@@ -2,7 +2,13 @@
 
 记录个人工作台每个版本中值得关注的变化，最新版本在前。未发布内容归入 `Unreleased`，发布前更新版本号和日期。
 
-## [Unreleased](https://github.com/wzh-devin/oh-my-workbench/compare/v1.1.2...HEAD)
+## [Unreleased](https://github.com/wzh-devin/oh-my-workbench/compare/v1.1.3...HEAD)
+
+## [v1.1.3](https://github.com/wzh-devin/oh-my-workbench/compare/v1.1.2...v1.1.3) - 2026-11-10
+
+### Code Refactoring
+
+- **记事本：** 移除已完成的旧密钥导入命令及部署文件兼容逻辑，统一使用数据库中的密钥进行初始化、校验和读写。([31dab41](https://github.com/wzh-devin/oh-my-workbench/commit/31dab41d0641bedeb77a630709ed8ff855f5374e))
 
 ## [v1.1.2](https://github.com/wzh-devin/oh-my-workbench/compare/v1.1.1...v1.1.2) - 2026-11-09
 
